@@ -1,0 +1,2211 @@
+<title>SCORM Studio</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231F6F5C'/%3E%3Cpath d='M9 10h14M9 16h14M9 22h9' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: slim tool bar, outline rail on the left, one editor panel on the right; stacks on phones */
+:root{
+  --bg:#F3F6F4; --surface:#FFFFFF; --sunk:#E8EEEB; --line:#D3DDD8;
+  --ink:#16221E; --muted:#56655F; --accent:#1F6F5C; --accent-ink:#FFFFFF;
+  --accent-soft:#DCEDE6; --marker:#C98A1E; --danger:#B3402F; --ok:#2E7D4F;
+  --display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body:"Public Sans", "Segoe UI", system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#101715; --surface:#17211E; --sunk:#0C1210; --line:#2A3833;
+  --ink:#E4ECE8; --muted:#97A8A1; --accent:#5DBB9E; --accent-ink:#08130F;
+  --accent-soft:#1D3A31; --marker:#E2B04F; --danger:#E7816F; --ok:#6FCB94; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#101715; --surface:#17211E; --sunk:#0C1210; --line:#2A3833;
+  --ink:#E4ECE8; --muted:#97A8A1; --accent:#5DBB9E; --accent-ink:#08130F;
+  --accent-soft:#1D3A31; --marker:#E2B04F; --danger:#E7816F; --ok:#6FCB94; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.5}
+button,input,textarea,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+/* top bar */
+.bar{border-bottom:1px solid var(--line);background:var(--surface)}
+.bar .wrap{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;padding-block:14px}
+.brand{display:flex;align-items:baseline;gap:10px;margin-right:auto;min-width:0}
+.brand h1{font-family:var(--display);font-weight:700;font-size:22px;letter-spacing:-.01em;margin:0}
+.brand .tag{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 14px;cursor:pointer;font-weight:500;font-size:14px;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--muted)}
+.btn.ghost:hover{color:var(--ink);border-color:var(--line)}
+.btn.small{padding:4px 10px;font-size:13px}
+.btn.danger{color:var(--danger)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+
+/* package strip */
+.strip{font-family:var(--mono);font-size:12.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px 18px;padding-block:12px}
+.strip b{color:var(--ink);font-weight:500}
+
+/* main grid */
+.main{display:grid;grid-template-columns:280px minmax(0,1fr);gap:24px;padding-block:8px 48px}
+@media (max-width:820px){.main{grid-template-columns:minmax(0,1fr)}}
+
+.rail{display:flex;flex-direction:column;gap:18px;min-width:0}
+.rail h2{font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 6px;font-weight:600}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:1px solid transparent;background:transparent;border-radius:8px;padding:8px 10px;cursor:pointer;min-width:0}
+.nav-item:hover{background:var(--sunk)}
+.nav-item.on{background:var(--surface);border-color:var(--line);box-shadow:0 1px 0 var(--line)}
+.nav-item .n{font-family:var(--mono);font-size:12px;color:var(--muted);width:22px;flex:none;font-variant-numeric:tabular-nums}
+.nav-item .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.nav-item.on .n{color:var(--accent)}
+.add{margin-top:6px}
+
+/* editor */
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:24px;min-width:0}
+@media (max-width:520px){.panel{padding:18px}}
+.panel-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:20px}
+.panel-head h2{font-family:var(--display);font-weight:700;font-size:24px;margin:0;margin-right:auto;text-wrap:balance}
+.eyebrow{font-family:var(--mono);font-size:12px;color:var(--marker);display:block;margin-bottom:2px}
+.fields{display:grid;gap:18px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:600px){.row2{grid-template-columns:1fr}}
+label.f{display:grid;gap:6px;min-width:0}
+label.f > span{font-weight:600;font-size:13.5px}
+.hint{font-size:12.5px;color:var(--muted);font-weight:400}
+input[type=text],input[type=number],textarea,select{width:100%;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:9px 11px}
+textarea{min-height:180px;resize:vertical;line-height:1.55}
+textarea.short{min-height:80px}
+input[type=color]{width:48px;height:38px;border:1px solid var(--line);border-radius:8px;background:var(--bg);padding:3px}
+.check{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
+.check input{margin-top:4px;accent-color:var(--accent)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:transparent;padding:8px 14px;cursor:pointer;font-size:14px}
+.seg button.on{background:var(--accent);color:var(--accent-ink)}
+
+.img-box{border:1px dashed var(--line);border-radius:10px;padding:14px;display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+.img-box img{max-width:180px;max-height:120px;border-radius:6px;object-fit:cover}
+.img-box video{width:240px;max-width:100%;border-radius:6px;background:#000}
+.link-row{display:flex;gap:8px;flex:1;min-width:220px}
+.link-row input{flex:1;min-width:0}
+.vmeta{display:grid;gap:8px;flex:1;min-width:200px}
+.vname{font-family:var(--mono);font-size:12.5px;word-break:break-all}
+.warn{font-size:13px;color:var(--danger)}
+.or{font-size:12.5px;color:var(--muted)}
+
+/* quiz */
+.q{border:1px solid var(--line);border-radius:10px;padding:16px;display:grid;gap:12px;background:var(--bg)}
+.q-top{display:flex;align-items:center;gap:8px}
+.q-top .eyebrow{margin:0;margin-right:auto}
+.opt{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:center}
+.opt input[type=radio]{accent-color:var(--ok);width:18px;height:18px}
+.opt.correct input[type=text]{border-color:var(--ok)}
+.qlist{display:grid;gap:14px}
+.kc{border:1px solid var(--line);border-radius:12px;padding:16px;display:grid;gap:14px;background:var(--bg)}
+.kc.on{border-color:var(--accent);background:var(--accent-soft)}
+.kc .q{background:var(--surface)}
+/* design panel */
+.themes{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.theme{border:1px solid var(--line);border-radius:10px;padding:0;overflow:hidden;cursor:pointer;background:var(--surface);text-align:left;display:grid}
+.theme:hover{border-color:var(--accent)}
+.theme.on{outline:2px solid var(--accent);outline-offset:1px}
+.theme .sw{height:54px;display:flex;align-items:flex-end;gap:6px;padding:8px}
+.theme .sw i{display:block;border-radius:4px}
+.theme .nm{padding:7px 10px;font-size:13px;font-weight:600;border-top:1px solid var(--line)}
+.colours{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.colour{display:flex;gap:10px;align-items:center;min-width:0}
+.colour span{display:grid;font-size:13.5px;font-weight:600;min-width:0}
+.colour span small{font-weight:400;color:var(--muted);font-size:12px}
+.design-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px;align-items:start}
+@media (max-width:1100px){.design-grid{grid-template-columns:minmax(0,1fr)}}
+.design-preview{position:sticky;top:12px;display:grid;gap:8px}
+.design-preview .frame{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--sunk);height:520px}
+.design-preview iframe{border:0;width:100%;height:100%;display:block}
+.dsec{display:grid;gap:12px;padding-bottom:18px;border-bottom:1px solid var(--line)}
+.dsec:last-child{border-bottom:0}
+.dsec h3{margin:0;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.warnline{font-size:12.5px;color:var(--danger)}
+.swatches{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.swatch{width:28px;height:28px;border-radius:50%;border:2px solid var(--surface);box-shadow:0 0 0 1px var(--line);cursor:pointer;padding:0}
+.swatch:hover{box-shadow:0 0 0 2px var(--accent)}
+.gen{border:1px solid var(--accent);background:var(--accent-soft);border-radius:12px;padding:18px;display:grid;gap:14px;margin-bottom:22px}
+.gen h3{font-family:var(--display);font-size:18px;margin:0}
+.gen-row{display:flex;flex-wrap:wrap;gap:14px;align-items:end}
+.gen-row label.f{flex:1;min-width:140px}
+.gen-row label.f.wide{flex:3;min-width:220px}
+.gen select,.gen input[type=text]{background:var(--surface)}
+.gen-out{display:grid;gap:10px}
+.gq{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:start}
+.gq input[type=checkbox]{margin-top:4px;accent-color:var(--accent);width:18px;height:18px}
+.gq .qt{font-weight:600}
+.gq ul{margin:6px 0 0;padding-left:18px;font-size:14px}
+.gq li.ok{color:var(--ok);font-weight:600}
+.gq .src{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-top:6px}
+.gq .fbk{font-size:13px;color:var(--muted);margin-top:4px}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+/* export dialog + preview */
+.overlay{position:fixed;inset:0;background:rgba(10,16,14,.55);z-index:50;display:flex;align-items:center;justify-content:center;padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.dialog{background:var(--surface);border:1px solid var(--line);border-radius:14px;max-width:560px;width:100%;padding:24px;max-height:100%;overflow:auto}
+.dialog h3{font-family:var(--display);font-size:21px;margin:0 0 6px}
+.issues{margin:12px 0;padding:12px 14px;border-radius:8px;background:var(--sunk);font-size:14px}
+.issues li{margin:4px 0}
+.issues.bad{border-left:3px solid var(--danger)}
+.issues.good{border-left:3px solid var(--ok)}
+.filelist{font-family:var(--mono);font-size:12.5px;color:var(--muted);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:12px 0;overflow-x:auto;white-space:pre}
+.dialog-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;margin-top:16px}
+.imp-list{margin:12px 0;padding:0;list-style:none;border:1px solid var(--line);border-radius:8px;max-height:260px;overflow:auto;background:var(--bg)}
+.imp-list li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line);font-size:14px;align-items:baseline}
+.imp-list li:last-child{border-bottom:0}
+.imp-list .n{font-family:var(--mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.imp-list .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.imp-list .m{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.opts-grid{display:grid;gap:10px;margin:14px 0}
+.status{font-size:14px;color:var(--muted);min-height:1.5em}
+.steps{padding-left:20px;margin:8px 0;font-size:14px}
+.steps li{margin:3px 0}
+
+.preview{background:var(--surface);border-radius:14px;width:100%;max-width:1100px;height:100%;display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--line)}
+.preview-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}
+.preview-bar strong{margin-right:auto;font-family:var(--display)}
+.frame-wrap{flex:1;background:var(--sunk);display:flex;justify-content:center;overflow:auto;min-height:0}
+.frame-wrap iframe{border:0;width:100%;height:100%;background:#fff;transition:max-width .2s}
+.frame-wrap.phone iframe{max-width:390px;border-left:1px solid var(--line);border-right:1px solid var(--line)}
+
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;font-size:14px;z-index:60;max-width:calc(100% - 32px)}
+.example{display:inline-block;font-family:var(--mono);font-size:11.5px;color:var(--marker);border:1px solid var(--marker);border-radius:99px;padding:1px 8px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<header class="bar">
+  <div class="wrap">
+    <div class="brand"><h1>SCORM Studio</h1><span class="tag">for Bridge</span></div>
+    <div class="actions">
+      <button class="btn ghost" id="btn-import" type="button" title="Import a Word, PowerPoint or PDF file">Import file</button>
+      <button class="btn ghost" id="btn-open" type="button">Open project</button>
+      <button class="btn ghost" id="btn-save" type="button">Save project</button>
+      <button class="btn" id="btn-preview" type="button">Preview course</button>
+      <button class="btn primary" id="btn-export" type="button">Download SCORM .zip</button>
+      <input type="file" id="file-open" accept=".zip,.json,application/zip,application/json" hidden>
+    </div>
+  </div>
+</header>
+
+<div class="wrap"><div class="strip" id="strip"></div></div>
+
+<div class="wrap main">
+  <aside class="rail">
+    <div>
+      <h2>Course</h2>
+      <div class="nav"><button class="nav-item" data-sel="settings" type="button"><span class="n">⚙</span><span class="t">Settings</span></button>
+        <button class="nav-item" data-sel="design" type="button"><span class="n">◐</span><span class="t">Design</span></button></div>
+    </div>
+    <div>
+      <h2>Pages</h2>
+      <div class="nav" id="nav-pages"></div>
+      <button class="btn small add" id="add-page" type="button">+ Add page</button>
+    </div>
+    <div>
+      <h2>Assessment</h2>
+      <div class="nav"><button class="nav-item" data-sel="quiz" type="button"><span class="n">?</span><span class="t" id="nav-quiz-label">Quiz</span></button></div>
+    </div>
+  </aside>
+  <main class="panel" id="editor"></main>
+</div>
+
+<div id="layer"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+/* =====================================================================
+   TEAM SETTINGS  (edit these lines in Notepad / TextEdit before sharing)
+
+   proxyUrl   - web address of your quiz server, for example
+                "https://quiz.example.co.uk"   (recommended: keeps your API key private)
+   accessCode - the ACCESS_CODE you set on the quiz server
+   apiKey     - ONLY for testing on your own computer. Anyone who opens a file
+                with a key in it can copy the key and spend your credit.
+   model      - Claude model used when calling the API directly
+   ===================================================================== */
+var STUDIO_CONFIG = {
+  proxyUrl:   "",
+  accessCode: "",
+  apiKey:     "",
+  model:      "claude-sonnet-5-5"
+};
+
+(function(){
+"use strict";
+var STORE_KEY = "scorm-studio-draft-v1";
+var uid = function(p){ return (p||"x") + Math.random().toString(36).slice(2,9); };
+
+/* ---------- example course (shown until the user edits or opens their own) ---------- */
+function exampleCourse(){
+  return {
+    example:true,
+    title:"Security Pass Awareness",
+    description:"A short induction on wearing your pass, stopping tailgating and reporting lost passes.",
+    author:"Security Team",
+    scorm:"1.2",
+    passMark:80,
+    accent:"#1F6F5C",
+    showAnswers:true,
+    allowRetry:true,
+    shuffle:false,
+    pages:[
+      {id:uid("p"),heading:"Why passes matter",image:null,imageAlt:"",keyPoint:"Your pass shows you belong here. No pass, no access.",
+       body:"Every person in the building should be identifiable at a glance.\n\nYour security pass does three jobs:\n- It opens the doors you are cleared for\n- It shows colleagues and security staff that you belong here\n- It records building access in case of an emergency or investigation"},
+      {id:uid("p"),heading:"Wearing your pass",image:null,imageAlt:"",keyPoint:"",
+       body:"Wear your pass **on your upper body, facing outwards**, at all times while on site.\n\nIf you see someone without a visible pass, it is fine to politely ask. Most of the time they have simply forgotten. If you do not feel comfortable asking, tell the Security Control Room."},
+      {id:uid("p"),heading:"Tailgating",image:null,imageAlt:"",keyPoint:"Hold the door for nobody you do not know. Point them to reception instead.",
+       body:"Tailgating is when someone follows you through a controlled door without using their own pass.\n\nIt feels rude to close a door on someone, but it is one of the most common ways unauthorised people get in.\n- Let the door close behind you\n- Direct visitors to reception\n- Report anyone who forces their way through"},
+      {id:uid("p"),heading:"Lost or damaged passes",image:null,imageAlt:"",keyPoint:"",
+       body:"Report a lost pass to Security **straight away**, even if you think it is at home. The pass can be suspended and a temporary one issued in minutes.\n\nDamaged passes are replaced free of charge. Never lend your pass to anyone, including colleagues."}
+    ],
+    quiz:[
+      {id:uid("q"),q:"Where should you wear your security pass?",options:["In your pocket","On your upper body, facing outwards","Clipped to your bag","Anywhere, as long as you have it"],correct:1,feedback:"Passes must be visible so people can see you belong on site."},
+      {id:uid("q"),q:"A friendly stranger asks you to hold a controlled door open. What do you do?",options:["Hold it, they seem fine","Let the door close and direct them to reception","Lend them your pass","Ignore them"],correct:1,feedback:"Politely direct them to reception. That is what it is there for."},
+      {id:uid("q"),q:"You think you left your pass at home. When should you report it?",options:["Only if it is still missing next week","Straight away","Never, just use a colleague's pass","At your next appraisal"],correct:1,feedback:"Report it straight away so it can be suspended."}
+    ]
+  };
+}
+
+/* ---------- course design: themes, fonts, layout ---------- */
+var FONTS = {
+  system:      {label:"System (Segoe UI / San Francisco)", stack:"'Segoe UI', system-ui, -apple-system, Roboto, Arial, sans-serif"},
+  arial:       {label:"Arial", stack:"Arial, Helvetica, sans-serif"},
+  georgia:     {label:"Georgia (serif)", stack:"Georgia, 'Times New Roman', serif"},
+  verdana:     {label:"Verdana (very readable)", stack:"Verdana, Geneva, sans-serif"},
+  lato:        {label:"Lato", stack:"'Lato', 'Segoe UI', Arial, sans-serif", g:"Lato:wght@400;700"},
+  opensans:    {label:"Open Sans", stack:"'Open Sans', 'Segoe UI', Arial, sans-serif", g:"Open+Sans:wght@400;600;700"},
+  roboto:      {label:"Roboto", stack:"'Roboto', 'Segoe UI', Arial, sans-serif", g:"Roboto:wght@400;500;700"},
+  sourcesans:  {label:"Source Sans 3", stack:"'Source Sans 3', 'Segoe UI', Arial, sans-serif", g:"Source+Sans+3:wght@400;600;700"},
+  nunito:      {label:"Nunito (rounded)", stack:"'Nunito', 'Segoe UI', Arial, sans-serif", g:"Nunito:wght@400;700;800"},
+  montserrat:  {label:"Montserrat", stack:"'Montserrat', 'Segoe UI', Arial, sans-serif", g:"Montserrat:wght@500;700;800"},
+  poppins:     {label:"Poppins", stack:"'Poppins', 'Segoe UI', Arial, sans-serif", g:"Poppins:wght@500;600;700"},
+  oswald:      {label:"Oswald (condensed)", stack:"'Oswald', 'Arial Narrow', Arial, sans-serif", g:"Oswald:wght@500;600"},
+  merriweather:{label:"Merriweather (serif)", stack:"'Merriweather', Georgia, serif", g:"Merriweather:wght@400;700"},
+  playfair:    {label:"Playfair Display (serif)", stack:"'Playfair Display', Georgia, serif", g:"Playfair+Display:wght@600;700"}
+};
+var THEMES = {
+  clean:     {label:"Clean",        accent:"#1F6F5C", bg:"#F3F6F5", card:"#FFFFFF", text:"#1B2422", headingFont:"system",     bodyFont:"system",     header:"light", corners:"rounded"},
+  deepblue:  {label:"Deep blue",    accent:"#0059A6", bg:"#EEF4FA", card:"#FFFFFF", text:"#16212E", headingFont:"montserrat", bodyFont:"opensans",   header:"brand", corners:"square"},
+  corporate: {label:"Corporate",    accent:"#1D4ED8", bg:"#EEF2F7", card:"#FFFFFF", text:"#14213D", headingFont:"montserrat", bodyFont:"opensans",   header:"brand", corners:"rounded"},
+  bold:      {label:"Bold dark",    accent:"#F5A524", bg:"#0F1720", card:"#1A2430", text:"#F2F5F8", headingFont:"oswald",     bodyFont:"roboto",     header:"brand", corners:"square"},
+  warm:      {label:"Warm",         accent:"#B4532A", bg:"#FAF4EC", card:"#FFFFFF", text:"#2B2118", headingFont:"merriweather", bodyFont:"lato",     header:"light", corners:"rounded"},
+  friendly:  {label:"Friendly",     accent:"#7C3AED", bg:"#F6F3FF", card:"#FFFFFF", text:"#221A33", headingFont:"nunito",     bodyFont:"nunito",     header:"light", corners:"rounded"},
+  contrast:  {label:"High contrast",accent:"#0033CC", bg:"#FFFFFF", card:"#FFFFFF", text:"#000000", headingFont:"verdana",    bodyFont:"verdana",    header:"light", corners:"square", textSize:"large"}
+};
+function defaultDesign(accent){
+  var t=THEMES.clean;
+  return {theme:"clean", accent:accent||t.accent, bg:t.bg, card:t.card, text:t.text, headingFont:t.headingFont, bodyFont:t.bodyFont,
+    header:t.header, width:"standard", corners:t.corners, textSize:"standard", logo:null, logoAlt:"", cover:false, coverImage:null, coverButton:"Start course"};
+}
+function ensureDesign(s){
+  if(!s) return s;
+  var d=defaultDesign(s.accent), cur=s.design||{};
+  Object.keys(d).forEach(function(k){ if(cur[k]===undefined) cur[k]=d[k]; });
+  if(!FONTS[cur.headingFont]) cur.headingFont="system";
+  if(!FONTS[cur.bodyFont]) cur.bodyFont="system";
+  s.design=cur; s.accent=cur.accent;
+  (s.pages||[]).forEach(function(p){ if(!p.imagePos) p.imagePos="above"; if(!p.callout) p.callout="brand"; });
+  return s;
+}
+function hexToRgb(h){ var m=String(h||"").replace("#","").match(/^([0-9a-f]{6})$/i); if(!m) return [0,0,0]; var n=parseInt(m[1],16); return [n>>16&255,n>>8&255,n&255]; }
+function luminance(h){ return hexToRgb(h).map(function(v){ v/=255; return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4); }).reduce(function(a,v,i){ return a+v*[0.2126,0.7152,0.0722][i]; },0); }
+function contrastRatio(a,b){ var x=luminance(a), y=luminance(b); return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05); }
+function onColour(bg){ return contrastRatio(bg,"#FFFFFF") >= contrastRatio(bg,"#111111") ? "#FFFFFF" : "#111111"; }
+
+var state = ensureDesign(load() || exampleCourse());
+var sel = {type:"settings", idx:0};
+var previewSize = "desktop";
+
+/* ---------- video files: kept in memory and in this browser's IndexedDB ---------- */
+var videoStore = {};
+var idb = (function(){
+  var dbp=null;
+  function open(){
+    if(dbp) return dbp;
+    dbp = new Promise(function(res){
+      try{ var r=indexedDB.open("scorm-studio",1);
+        r.onupgradeneeded=function(){ r.result.createObjectStore("videos"); };
+        r.onsuccess=function(){ res(r.result); }; r.onerror=function(){ res(null); };
+      }catch(e){ res(null); }
+    });
+    return dbp;
+  }
+  function tx(mode,fn){
+    return open().then(function(db){
+      if(!db) return null;
+      return new Promise(function(res){
+        try{ var t=db.transaction("videos",mode), req=fn(t.objectStore("videos"));
+          t.oncomplete=function(){ res(req && req.result); }; t.onerror=function(){ res(null); }; t.onabort=function(){ res(null); };
+        }catch(e){ res(null); }
+      });
+    });
+  }
+  return {
+    put:function(k,b){ return tx("readwrite",function(s){ return s.put(b,k); }); },
+    get:function(k){ return tx("readonly",function(s){ return s.get(k); }); },
+    del:function(k){ return tx("readwrite",function(s){ return s.delete(k); }); }
+  };
+})();
+function restoreVideos(){
+  var keys = state.pages.filter(function(p){ return p.video && p.video.kind==="file" && !videoStore[p.video.key]; }).map(function(p){ return p.video.key; });
+  if(!keys.length) return;
+  Promise.all(keys.map(function(k){ return idb.get(k).then(function(b){ if(b) videoStore[k]=b; }); })).then(function(){ render(); });
+}
+function forgetVideo(key){
+  if(!key) return;
+  var used = state.pages.some(function(p){ return p.video && p.video.key===key; });
+  if(!used){ delete videoStore[key]; idb.del(key); }
+}
+function parseVideoLink(u){
+  var m; u=String(u||"").trim();
+  if((m=u.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([\w-]{11})/))) return {kind:"embed", url:u, src:"https://www.youtube-nocookie.com/embed/"+m[1]+"?rel=0", site:"YouTube"};
+  if((m=u.match(/vimeo\.com\/(?:video\/)?(\d+)/))) return {kind:"embed", url:u, src:"https://player.vimeo.com/video/"+m[1], site:"Vimeo"};
+  if(/^https:\/\/\S+\.(mp4|webm|m4v)(\?\S*)?$/i.test(u)) return {kind:"remote", url:u, src:u, site:"Direct link"};
+  return null;
+}
+function fmtSize(b){ return b>1048576 ? (b/1048576).toFixed(1)+" MB" : Math.max(1,Math.round(b/1024))+" KB"; }
+function videoExt(v){ var m=(v.name||"").match(/\.([a-z0-9]{2,4})$/i); if(m) return m[1].toLowerCase(); return ({"video/mp4":"mp4","video/webm":"webm","video/quicktime":"mov"})[v.type]||"mp4"; }
+
+function load(){ try{ var s = localStorage.getItem(STORE_KEY); return s ? JSON.parse(s) : null; }catch(e){ return null; } }
+var saveTimer=null;
+function persist(){ clearTimeout(saveTimer); saveTimer = setTimeout(function(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){} }, 300); }
+function touched(){ if(state.example){ state.example=false; } persist(); renderStrip(); }
+
+/* ---------- helpers ---------- */
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); }
+function xmlEsc(s){ return esc(s); }
+function el(html){ var t=document.createElement("template"); t.innerHTML=html.trim(); return t.content.firstChild; }
+function toast(msg){ var t=el('<div class="toast" role="status"></div>'); t.textContent=msg; document.body.appendChild(t); setTimeout(function(){ t.remove(); }, 3200); }
+function slug(s){ return (String(s||"course").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||"course").slice(0,60); }
+
+/* ---------- outline + strip ---------- */
+function renderStrip(){
+  var q=state.quiz.length;
+  document.getElementById("strip").innerHTML =
+    (state.example?'<span class="example">Example course: edit or replace it</span>':'')+
+    '<span>Package <b>SCORM '+(state.scorm==="2004"?"2004 4th ed.":"1.2")+'</b></span>'+
+    '<span>Pages <b>'+state.pages.length+'</b></span>'+
+    '<span>Knowledge checks <b>'+state.pages.filter(function(p){ return p.check && p.check.on && p.check.questions.length; }).length+'</b></span>'+
+    '<span>Videos <b>'+state.pages.filter(function(p){ return p.video; }).length+'</b></span>'+
+    '<span>Questions <b>'+q+'</b></span>'+
+    '<span>'+(q?'Pass mark <b>'+state.passMark+'%</b>':'Completes when <b>last page viewed</b>')+'</span>';
+}
+function renderNav(){
+  var nav=document.getElementById("nav-pages"); nav.innerHTML="";
+  state.pages.forEach(function(p,i){
+    var b=el('<button class="nav-item" type="button"><span class="n">'+String(i+1).padStart(2,"0")+'</span><span class="t"></span></button>');
+    b.querySelector(".t").textContent = p.heading || "Untitled page";
+    b.dataset.sel="page"; b.dataset.idx=i;
+    nav.appendChild(b);
+  });
+  document.getElementById("nav-quiz-label").textContent = state.quiz.length ? "Quiz · "+state.quiz.length+" question"+(state.quiz.length===1?"":"s") : "Quiz (none)";
+  document.querySelectorAll(".nav-item").forEach(function(b){
+    var on = b.dataset.sel===sel.type && (sel.type!=="page" || +b.dataset.idx===sel.idx);
+    b.classList.toggle("on", on);
+  });
+}
+document.querySelector(".rail").addEventListener("click", function(e){
+  var b=e.target.closest(".nav-item"); if(!b) return;
+  sel={type:b.dataset.sel, idx:+(b.dataset.idx||0)}; render();
+});
+document.getElementById("add-page").addEventListener("click", function(){
+  state.pages.push({id:uid("p"),heading:"New page",body:"",image:null,imageAlt:"",keyPoint:""});
+  sel={type:"page", idx:state.pages.length-1}; touched(); render();
+  var h=document.getElementById("pg-heading"); if(h){ h.focus(); h.select(); }
+});
+
+/* ---------- editor views ---------- */
+function render(){ renderNav(); renderStrip(); var ed=document.getElementById("editor"); ed.innerHTML="";
+  if(sel.type==="settings") renderSettings(ed);
+  else if(sel.type==="design") renderDesign(ed);
+  else if(sel.type==="page") renderPage(ed);
+  else renderQuiz(ed);
+}
+
+function renderSettings(ed){
+  ed.innerHTML =
+  '<div class="panel-head"><div><span class="eyebrow">imsmanifest.xml · course details</span><h2>Course settings</h2></div></div>'+
+  '<div class="fields">'+
+    '<label class="f"><span>Course title</span><input type="text" id="s-title"></label>'+
+    '<label class="f"><span>Description <span class="hint">shown on the learner\'s welcome screen</span></span><textarea class="short" id="s-desc"></textarea></label>'+
+    '<label class="f"><span>Author or team</span><input type="text" id="s-author"></label>'+
+    '<p class="hint" style="margin:0">Colours, fonts, logo and cover page are in <b>Design</b>.</p>'+
+    '<div class="f" style="display:grid;gap:6px"><span style="font-weight:600;font-size:13.5px">SCORM version</span>'+
+      '<div class="seg" role="group" aria-label="SCORM version"><button type="button" data-v="1.2">SCORM 1.2</button><button type="button" data-v="2004">SCORM 2004 4th ed.</button></div>'+
+      '<span class="hint">Bridge plays both. SCORM 1.2 is the safest choice for most courses.</span></div>'+
+    '<div class="row2">'+
+      '<label class="f"><span>Pass mark (%)</span><input type="number" min="0" max="100" step="5" id="s-pass"></label>'+
+      '<div></div>'+
+    '</div>'+
+    '<label class="check"><input type="checkbox" id="s-show"><span><b>Show correct answers</b> after the quiz is submitted<br><span class="hint">Includes your feedback text for each question</span></span></label>'+
+    '<label class="check"><input type="checkbox" id="s-retry"><span><b>Allow retries</b> if the learner fails</span></label>'+
+    '<label class="check"><input type="checkbox" id="s-shuffle"><span><b>Shuffle</b> questions and answers for each attempt</span></label>'+
+    '<div style="display:flex;justify-content:flex-end"><button class="btn small danger" type="button" id="s-new">Start a blank course</button></div>'+
+  '</div>';
+  var bind=function(id,key,fn){ var i=ed.querySelector("#"+id); if(i.type==="checkbox"){ i.checked=!!state[key]; i.addEventListener("change",function(){ state[key]=i.checked; touched(); }); } else { i.value=state[key]; i.addEventListener("input",function(){ state[key]= fn?fn(i.value):i.value; touched(); }); } };
+  bind("s-title","title"); bind("s-desc","description"); bind("s-author","author");
+  bind("s-pass","passMark",function(v){ v=Math.round(+v); return isNaN(v)?80:Math.max(0,Math.min(100,v)); });
+  bind("s-show","showAnswers"); bind("s-retry","allowRetry"); bind("s-shuffle","shuffle");
+  ed.querySelectorAll(".seg button").forEach(function(b){
+    b.classList.toggle("on", b.dataset.v===state.scorm);
+    b.addEventListener("click",function(){ state.scorm=b.dataset.v; touched(); ed.querySelectorAll(".seg button").forEach(function(x){ x.classList.toggle("on", x.dataset.v===state.scorm); }); });
+  });
+  var nb=ed.querySelector("#s-new"), armed=false;
+  nb.addEventListener("click",function(){
+    if(!armed){ armed=true; nb.textContent="Click again to clear everything"; setTimeout(function(){ armed=false; nb.textContent="Start a blank course"; },4000); return; }
+    var keepDesign=state.design;
+    state=ensureDesign({example:false,title:"Untitled course",description:"",author:"",scorm:"1.2",passMark:80,accent:keepDesign.accent,showAnswers:true,allowRetry:true,shuffle:false,
+      design:keepDesign, pages:[{id:uid("p"),heading:"Introduction",body:"",image:null,imageAlt:"",keyPoint:""}],quiz:[]});
+    persist(); sel={type:"settings",idx:0}; render(); toast("Blank course ready");
+  });
+}
+
+function renderDesign(ed){
+  var d=state.design;
+  var fontOpts=function(){ return Object.keys(FONTS).map(function(k){ return '<option value="'+k+'">'+esc(FONTS[k].label)+'</option>'; }).join(""); };
+  var seg=function(id,label,opts){ return '<div class="f" style="display:grid;gap:6px"><span style="font-weight:600;font-size:13.5px">'+label+'</span><div class="seg" role="group" aria-label="'+label+'" data-key="'+id+'">'+
+    opts.map(function(o){ return '<button type="button" data-v="'+o[0]+'">'+o[1]+'</button>'; }).join("")+'</div></div>'; };
+  ed.innerHTML =
+  '<div class="panel-head"><div><span class="eyebrow">Look and feel · applies to the whole course</span><h2>Design</h2></div></div>'+
+  '<div class="design-grid"><div class="fields">'+
+    '<section class="dsec"><h3>Theme</h3><div class="themes" id="d-themes"></div>'+
+      '<span class="hint">Picking a theme sets the colours, fonts, header and corners. Your logo and cover page stay as they are.</span></section>'+
+    '<section class="dsec"><h3>Colours</h3><div class="colours">'+
+      [["accent","Brand","buttons, progress bar"],["bg","Background","behind the page"],["card","Page","the content area"],["text","Text","headings and body"]].map(function(c){
+        return '<label class="colour"><input type="color" id="d-'+c[0]+'"><span>'+c[1]+'<small>'+c[2]+'</small></span></label>'; }).join("")+
+      '</div><div class="swatches" role="group" aria-label="Quick brand colours"><span class="hint">Quick brand colours:</span></div>'+
+      '<div class="warnline" id="d-contrast" role="status"></div></section>'+
+    '<section class="dsec"><h3>Fonts</h3><div class="row2">'+
+      '<label class="f"><span>Headings</span><select id="d-hfont">'+fontOpts()+'</select></label>'+
+      '<label class="f"><span>Body text</span><select id="d-bfont">'+fontOpts()+'</select></label></div>'+
+      '<span class="hint">Web fonts download when the course opens. If a network blocks them, a similar standard font is used.</span></section>'+
+    '<section class="dsec"><h3>Layout</h3>'+
+      seg("header","Header bar",[["light","Plain"],["brand","Brand colour"]])+
+      seg("width","Page width",[["narrow","Narrow"],["standard","Standard"],["wide","Wide"]])+
+      seg("corners","Corners",[["rounded","Rounded"],["square","Square"]])+
+      seg("textSize","Text size",[["standard","Standard"],["large","Large"]])+
+    '</section>'+
+    '<section class="dsec"><h3>Logo</h3><div class="img-box" id="d-logobox"></div>'+
+      '<span class="hint">Shown in the header on every page. A wide PNG with a transparent background works best.</span></section>'+
+    '<section class="dsec"><h3>Cover page</h3>'+
+      '<label class="check"><input type="checkbox" id="d-cover"><span><b>Show a cover page</b> before the first page<br><span class="hint">Course title, description, logo and a start button</span></span></label>'+
+      '<div id="d-coverbits" class="fields">'+
+        '<label class="f"><span>Start button text</span><input type="text" id="d-coverbtn" maxlength="40"></label>'+
+        '<div class="f" style="display:grid;gap:6px"><span style="font-weight:600;font-size:13.5px">Cover image <span class="hint">optional · a wide photo looks best</span></span><div class="img-box" id="d-coverbox"></div></div>'+
+      '</div></section>'+
+  '</div>'+
+  '<aside class="design-preview"><div style="display:flex;align-items:center;gap:8px"><b style="margin-right:auto">Live preview</b>'+
+    '<div class="seg" role="group" aria-label="Preview page"><button type="button" data-pv="cover">Cover</button><button type="button" data-pv="page">Page</button><button type="button" data-pv="quiz">Quiz</button></div></div>'+
+    '<div class="frame"><iframe title="Design preview" id="d-frame"></iframe></div>'+
+    '<span class="hint">Use Preview course at the top to click through the whole course.</span></aside></div>';
+
+  // themes
+  var tw=ed.querySelector("#d-themes");
+  Object.keys(THEMES).forEach(function(k){
+    var t=THEMES[k];
+    var b=el('<button type="button" class="theme"><span class="sw"><i></i><i></i><i></i></span><span class="nm"></span></button>');
+    b.querySelector(".sw").style.background=t.bg;
+    var is=b.querySelectorAll(".sw i");
+    is[0].style.cssText="width:46%;height:30px;background:"+t.card+";border:1px solid rgba(0,0,0,.08)";
+    is[1].style.cssText="width:22%;height:12px;background:"+t.accent;
+    is[2].style.cssText="width:14%;height:12px;background:"+t.text;
+    b.querySelector(".nm").textContent=t.label; b.dataset.theme=k;
+    b.addEventListener("click",function(){
+      ["accent","bg","card","text","headingFont","bodyFont","header","corners"].forEach(function(f){ d[f]=t[f]; });
+      d.textSize=t.textSize||"standard"; d.theme=k; changed(true);
+    });
+    tw.appendChild(b);
+  });
+  // colours
+  ["accent","bg","card","text"].forEach(function(f){
+    var i=ed.querySelector("#d-"+f); i.value=d[f];
+    i.addEventListener("input",function(){ d[f]=i.value; d.theme="custom"; changed(false); });
+  });
+  var sw=ed.querySelector(".swatches");
+  [["#0059A6","Deep blue"],["#1D4ED8","Royal blue"],["#0E7490","Teal"],["#1F6F5C","Green"],["#B4532A","Rust"],["#B91C1C","Red"],["#7C3AED","Purple"],["#F5A524","Amber"],["#222222","Charcoal"]].forEach(function(c){
+    var b=el('<button type="button" class="swatch"></button>'); b.style.background=c[0]; b.title=c[1]+" "+c[0]; b.setAttribute("aria-label",c[1]+" "+c[0]);
+    b.addEventListener("click",function(){ d.accent=c[0]; d.theme="custom"; changed(false); });
+    sw.appendChild(b);
+  });
+  var hf=ed.querySelector("#d-hfont"), bf=ed.querySelector("#d-bfont");
+  hf.value=d.headingFont; bf.value=d.bodyFont;
+  hf.addEventListener("change",function(){ d.headingFont=hf.value; d.theme="custom"; changed(false); });
+  bf.addEventListener("change",function(){ d.bodyFont=bf.value; d.theme="custom"; changed(false); });
+  ed.querySelectorAll(".seg[data-key] button").forEach(function(b){
+    var key=b.parentNode.dataset.key;
+    b.addEventListener("click",function(){ d[key]=b.dataset.v; if(key!=="width"&&key!=="textSize") d.theme="custom"; changed(false); });
+  });
+  // cover
+  var cv=ed.querySelector("#d-cover"), cb=ed.querySelector("#d-coverbtn");
+  cv.checked=!!d.cover; cb.value=d.coverButton||"Start course";
+  cv.addEventListener("change",function(){ d.cover=cv.checked; if(cv.checked) pv="cover"; else if(pv==="cover") pv="page"; changed(false); });
+  cb.addEventListener("input",function(){ d.coverButton=cb.value; changed(false); });
+
+  function pickImage(box, key, altKey, label, keepPng){
+    box.innerHTML="";
+    if(d[key]){
+      var img=el('<img alt="">'); img.src=d[key]; box.appendChild(img);
+      if(key==="logo") img.style.cssText="max-height:60px;width:auto;background:"+(d.header==="brand"?d.accent:d.card)+";padding:6px;border-radius:6px";
+      var col=el('<div style="display:grid;gap:8px;flex:1;min-width:180px"></div>');
+      if(altKey){ col.appendChild(el('<label class="f"><span>Alt text</span><input type="text" id="d-'+altKey+'"></label>')); }
+      var rm=el('<button class="btn small danger" type="button" style="justify-self:start">Remove</button>'); col.appendChild(rm); box.appendChild(col);
+      if(altKey){ var a=col.querySelector("input"); a.value=d[altKey]||""; a.addEventListener("input",function(){ d[altKey]=a.value; touched(); }); }
+      rm.addEventListener("click",function(){ d[key]=null; changed(false); pickImage(box,key,altKey,label,keepPng); });
+    } else {
+      var lab=el('<label class="btn small">'+label+'<input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif" hidden></label>');
+      box.appendChild(lab);
+      lab.querySelector("input").addEventListener("change",function(e){
+        var f=e.target.files[0]; if(!f) return;
+        var done=function(url){ d[key]=url; changed(false); pickImage(box,key,altKey,label,keepPng); };
+        if(keepPng && (f.type==="image/png"||f.type==="image/svg+xml") && f.size<400000){
+          var r=new FileReader(); r.onload=function(){ done(r.result); }; r.readAsDataURL(f);
+        } else shrinkImage(f).then(done).catch(function(){ toast("That image could not be read. Try a PNG or JPG."); });
+      });
+    }
+  }
+  pickImage(ed.querySelector("#d-logobox"),"logo","logoAlt","Choose logo…",true);
+  pickImage(ed.querySelector("#d-coverbox"),"coverImage",null,"Choose cover image…",false);
+
+  // preview
+  var pv = d.cover ? "cover" : "page", frame=ed.querySelector("#d-frame"), timer=null;
+  ed.querySelectorAll("[data-pv]").forEach(function(b){ b.addEventListener("click",function(){ pv=b.dataset.pv; sync(); draw(); }); });
+  function draw(){
+    clearTimeout(timer);
+    timer=setTimeout(function(){
+      var data=courseData(null); data.previewStart=pv; data.preview=true;
+      frame.srcdoc=playerHTML(data);
+    },120);
+  }
+  function sync(){
+    ed.querySelectorAll(".theme").forEach(function(b){ b.classList.toggle("on", b.dataset.theme===d.theme); });
+    ["accent","bg","card","text"].forEach(function(f){ ed.querySelector("#d-"+f).value=d[f]; });
+    hf.value=d.headingFont; bf.value=d.bodyFont;
+    ed.querySelectorAll(".seg[data-key]").forEach(function(s){ s.querySelectorAll("button").forEach(function(b){ b.classList.toggle("on", b.dataset.v===d[s.dataset.key]); }); });
+    ed.querySelector("#d-coverbits").hidden=!d.cover;
+    ed.querySelectorAll("[data-pv]").forEach(function(b){ b.classList.toggle("on", b.dataset.pv===pv); b.disabled = (b.dataset.pv==="cover" && !d.cover) || (b.dataset.pv==="quiz" && !state.quiz.length); });
+    var warn=[];
+    if(contrastRatio(d.text,d.card)<4.5) warn.push("Text is hard to read on the page colour.");
+    if(contrastRatio(d.accent,d.card)<2.2) warn.push("The brand colour barely stands out from the page colour.");
+    ed.querySelector("#d-contrast").textContent=warn.join(" ");
+  }
+  function changed(full){ state.design.accent && (state.accent=state.design.accent); touched(); sync(); draw(); if(full){ pickImage(ed.querySelector("#d-logobox"),"logo","logoAlt","Choose logo…",true); } }
+  sync(); draw();
+}
+
+function renderPage(ed){
+  var i=sel.idx, p=state.pages[i]; if(!p){ sel={type:"settings",idx:0}; return render(); }
+  ed.innerHTML =
+  '<div class="panel-head"><div><span class="eyebrow">Page '+(i+1)+' of '+state.pages.length+'</span><h2 id="pg-title"></h2></div>'+
+    '<button class="btn small" type="button" id="pg-up" aria-label="Move page up">↑</button>'+
+    '<button class="btn small" type="button" id="pg-down" aria-label="Move page down">↓</button>'+
+    '<button class="btn small" type="button" id="pg-dup">Duplicate</button>'+
+    '<button class="btn small danger" type="button" id="pg-del">Delete</button></div>'+
+  '<div class="fields">'+
+    '<label class="f"><span>Heading</span><input type="text" id="pg-heading"></label>'+
+    '<label class="f"><span>Content <span class="hint">Blank line = new paragraph · start a line with "- " for a bullet · **bold**</span></span><textarea id="pg-body"></textarea></label>'+
+    '<div class="f" style="display:grid;gap:6px"><span style="font-weight:600;font-size:13.5px">Video <span class="hint">optional · shown above the text</span></span>'+
+      '<div class="img-box" id="pg-vidbox"></div></div>'+
+    '<div class="f" style="display:grid;gap:6px"><span style="font-weight:600;font-size:13.5px">Image <span class="hint">optional · large photos are resized to keep the package small</span></span>'+
+      '<div class="img-box" id="pg-imgbox"></div></div>'+
+    '<div class="row2">'+
+      '<label class="f"><span>Key point <span class="hint">optional · shown in a highlighted box</span></span><input type="text" id="pg-key"></label>'+
+      '<label class="f"><span>Key point style</span><select id="pg-callout">'+
+        '<option value="brand">Brand colour</option><option value="info">Information (blue)</option><option value="warning">Warning (amber)</option><option value="success">Good practice (green)</option><option value="danger">Important (red)</option>'+
+      '</select></label>'+
+    '</div>'+
+    '<section class="kc" id="pg-check"></section>'+
+  '</div>';
+  renderCheck(ed.querySelector("#pg-check"), p, i);
+  var title=ed.querySelector("#pg-title"); title.textContent=p.heading||"Untitled page";
+  var h=ed.querySelector("#pg-heading"); h.value=p.heading;
+  h.addEventListener("input",function(){ p.heading=h.value; title.textContent=h.value||"Untitled page"; touched(); renderNav(); });
+  var b=ed.querySelector("#pg-body"); b.value=p.body; b.addEventListener("input",function(){ p.body=b.value; touched(); });
+  var k=ed.querySelector("#pg-key"); k.value=p.keyPoint||""; k.addEventListener("input",function(){ p.keyPoint=k.value; touched(); });
+  var co=ed.querySelector("#pg-callout"); co.value=p.callout||"brand"; co.addEventListener("change",function(){ p.callout=co.value; touched(); });
+  renderImgBox(ed.querySelector("#pg-imgbox"), p);
+  renderVideoBox(ed.querySelector("#pg-vidbox"), p);
+  ed.querySelector("#pg-up").disabled = i===0;
+  ed.querySelector("#pg-down").disabled = i===state.pages.length-1;
+  ed.querySelector("#pg-up").addEventListener("click",function(){ move(i,-1); });
+  ed.querySelector("#pg-down").addEventListener("click",function(){ move(i,1); });
+  ed.querySelector("#pg-dup").addEventListener("click",function(){
+    var c=JSON.parse(JSON.stringify(p)); c.id=uid("p"); c.heading=(p.heading||"Page")+" (copy)";
+    if(c.check) c.check.questions.forEach(function(q){ q.id=uid("k"); });
+    if(c.video && c.video.kind==="file"){ var nk=uid("v"); var blob=videoStore[p.video.key]; c.video.key=nk; if(blob){ videoStore[nk]=blob; idb.put(nk,blob); } }
+    state.pages.splice(i+1,0,c); sel.idx=i+1; touched(); render();
+  });
+  var del=ed.querySelector("#pg-del"), armed=false;
+  del.addEventListener("click",function(){
+    if(state.pages.length===1){ toast("A course needs at least one page"); return; }
+    if(!armed){ armed=true; del.textContent="Confirm delete"; setTimeout(function(){ armed=false; del.textContent="Delete"; },3500); return; }
+    var gone=state.pages.splice(i,1)[0]; if(gone.video && gone.video.kind==="file") forgetVideo(gone.video.key);
+    sel.idx=Math.max(0,i-1); touched(); render(); toast("Page deleted");
+  });
+}
+function pageText(p, i){
+  var parts=["## Page "+(i+1)+": "+(p.heading||"Untitled")];
+  if(p.body) parts.push(p.body.replace(/\*\*/g,""));
+  if(p.keyPoint) parts.push("Key point: "+p.keyPoint);
+  if(p.image && p.imageAlt) parts.push("Picture shows: "+p.imageAlt);
+  return parts.join("\n");
+}
+function renderCheck(box, p, pageIdx){
+  if(!p.check) p.check={on:false, mustPass:true, questions:[]};
+  var c=p.check;
+  box.innerHTML=
+    '<div class="kc-head"><label class="check"><input type="checkbox" id="kc-on"><span><b>Knowledge check after this page</b><br>'+
+      '<span class="hint">A few quick questions on their own screen before the next page. Not part of the final quiz score.</span></span></label></div>'+
+    '<div id="kc-body" class="fields"></div>';
+  var on=box.querySelector("#kc-on"), body=box.querySelector("#kc-body");
+  on.checked=!!c.on;
+  on.addEventListener("change",function(){
+    c.on=on.checked;
+    if(c.on && !c.questions.length) c.questions.push({id:uid("k"),q:"",options:["",""],correct:0,feedback:""});
+    touched(); draw();
+  });
+  function draw(){
+    body.hidden=!c.on; box.classList.toggle("on", !!c.on);
+    if(!c.on){ body.innerHTML=""; return; }
+    body.innerHTML=
+      '<label class="check"><input type="checkbox" id="kc-must"><span><b>Must answer correctly to continue</b><br><span class="hint">Untick for practice only: learners see the answers and can carry on either way</span></span></label>'+
+      '<div class="qlist" id="kc-list"></div>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">'+
+        '<button class="btn small" type="button" id="kc-add">+ Add question</button>'+
+        '<button class="btn small" type="button" id="kc-gen">Write questions from this page</button>'+
+        '<span class="status" id="kc-status"></span></div>';
+    var must=body.querySelector("#kc-must"); must.checked=c.mustPass!==false;
+    must.addEventListener("change",function(){ c.mustPass=must.checked; touched(); });
+    var list=body.querySelector("#kc-list");
+    c.questions.forEach(function(q,qi){ list.appendChild(questionCard(q,qi,c.questions,draw)); });
+    body.querySelector("#kc-add").addEventListener("click",function(){ c.questions.push({id:uid("k"),q:"",options:["",""],correct:0,feedback:""}); touched(); draw(); });
+    var gb=body.querySelector("#kc-gen"), st=body.querySelector("#kc-status"), ctrl=null;
+    gb.addEventListener("click",function(){
+      if(ctrl){ ctrl.abort(); return; }
+      var text=pageText(p,pageIdx);
+      if(text.replace(/## Page \d+:.*\n?/,"").trim().length<80){ st.textContent="Add more text to this page first."; return; }
+      ctrl=new AbortController(); gb.textContent="Stop"; st.innerHTML='<span class="spin" aria-hidden="true"></span>Writing questions…';
+      var existing=c.questions.map(function(q){ return q.q; }).filter(Boolean);
+      writeQuestions({title:state.title, content:text, count:2, level:"mixed", focus:"", existing:existing}, ctrl.signal).then(function(raw){
+        var got=cleanGenerated(raw).filter(function(r){ return existing.indexOf(r.q)<0; });
+        // replace a blank starter question rather than leaving it at the top
+        c.questions=c.questions.filter(function(q){ return q.q.trim() || q.options.some(function(o){ return o.trim(); }); });
+        got.forEach(function(r){ c.questions.push({id:uid("k"),q:r.q,options:r.options,correct:r.correct,feedback:r.feedback}); });
+        touched(); ctrl=null; draw();
+        var s2=box.querySelector("#kc-status"); if(s2) s2.textContent = got.length ? "Added "+got.length+" question"+(got.length===1?"":"s")+". Check them before publishing." : "No usable questions came back. Try again.";
+      }).catch(function(err){
+        var code=err && err.code; ctrl=null; gb.textContent="Write questions from this page";
+        if(code==="not_setup") { st.textContent=""; openAiSettings(); }
+        else if(code==="cancelled" || (err && err.name==="AbortError")) st.textContent="Stopped.";
+        else if(code==="bad_code") st.textContent="The access code was not accepted.";
+        else if(code==="unreachable") st.textContent="Could not reach the quiz server.";
+        else if(code==="rate_limited") st.textContent=(err && err.message) || "Too many requests. Try again shortly.";
+        else st.textContent="Questions could not be written ("+(code||"error")+").";
+      });
+    });
+  }
+  draw();
+}
+function move(i,d){ var j=i+d; var a=state.pages; var t=a[i]; a[i]=a[j]; a[j]=t; sel.idx=j; touched(); render(); }
+
+function renderImgBox(box,p){
+  box.innerHTML="";
+  if(p.image){
+    var img=el('<img alt="">'); img.src=p.image; box.appendChild(img);
+    var col=el('<div style="display:grid;gap:8px;flex:1;min-width:180px"></div>');
+    col.appendChild(el('<label class="f"><span>Alt text <span class="hint">describes the image for screen readers</span></span><input type="text" id="pg-alt"></label>'));
+    col.appendChild(el('<label class="f"><span>Position</span><select id="pg-imgpos">'+
+      '<option value="above">Above the text</option><option value="below">Below the text</option>'+
+      '<option value="left">Left of the text</option><option value="right">Right of the text</option>'+
+      '<option value="banner">Full-width banner at the top</option></select></label>'));
+    var rm=el('<button class="btn small danger" type="button" style="justify-self:start">Remove image</button>');
+    col.appendChild(rm); box.appendChild(col);
+    var alt=col.querySelector("#pg-alt"); alt.value=p.imageAlt||""; alt.addEventListener("input",function(){ p.imageAlt=alt.value; touched(); });
+    var pos=col.querySelector("#pg-imgpos"); pos.value=p.imagePos||"above"; pos.addEventListener("change",function(){ p.imagePos=pos.value; touched(); });
+    rm.addEventListener("click",function(){ p.image=null; touched(); renderImgBox(box,p); });
+  } else {
+    var lab=el('<label class="btn small">Choose image…<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden id="pg-img"></label>');
+    box.appendChild(lab); box.appendChild(el('<span class="hint">PNG, JPG, WebP or GIF</span>'));
+    lab.querySelector("input").addEventListener("change",function(e){
+      var f=e.target.files[0]; if(!f) return;
+      shrinkImage(f).then(function(url){ p.image=url; touched(); renderImgBox(box,p); }).catch(function(){ toast("That image could not be read. Try a JPG or PNG."); });
+    });
+  }
+}
+function renderVideoBox(box,p){
+  box.innerHTML="";
+  var v=p.video;
+  if(!v){
+    var up=el('<label class="btn small">Upload video…<input type="file" accept="video/mp4,video/webm,video/quicktime,.mp4,.m4v,.webm,.mov" hidden></label>');
+    var link=el('<div class="link-row"><input type="text" placeholder="or paste a YouTube or Vimeo link" aria-label="Video link" id="pg-vlink"><button class="btn small" type="button">Add link</button></div>');
+    box.appendChild(up); box.appendChild(link);
+    box.appendChild(el('<span class="hint" style="flex-basis:100%">Uploaded videos go inside the SCORM package and play offline. MP4 plays in every browser. Links need internet access and Bridge cannot tell whether they were watched.</span>'));
+    up.querySelector("input").addEventListener("change",function(e){
+      var f=e.target.files[0]; if(!f) return;
+      var key=uid("v"); videoStore[key]=f; idb.put(key,f);
+      p.video={kind:"file", key:key, name:f.name, type:f.type||"video/mp4", size:f.size, required:false};
+      touched(); renderVideoBox(box,p);
+      if(f.size>200*1048576) toast("That video is "+fmtSize(f.size)+". Large files take longer to upload and load for learners.");
+    });
+    var add=function(){
+      var parsed=parseVideoLink(link.querySelector("input").value);
+      if(!parsed){ toast("Paste a YouTube or Vimeo link, or a direct https link ending in .mp4 or .webm"); return; }
+      parsed.required=false; p.video=parsed; touched(); renderVideoBox(box,p);
+    };
+    link.querySelector("button").addEventListener("click",add);
+    link.querySelector("input").addEventListener("keydown",function(e){ if(e.key==="Enter"){ e.preventDefault(); add(); } });
+    return;
+  }
+  var meta=el('<div class="vmeta"></div>');
+  if(v.kind==="file"){
+    var blob=videoStore[v.key];
+    if(blob){
+      var vid=el('<video controls preload="metadata" playsinline></video>'); vid.src=URL.createObjectURL(blob); box.appendChild(vid);
+    }
+    meta.appendChild(el('<div class="vname">'+esc(v.name)+' · '+fmtSize(v.size)+'</div>'));
+    if(!blob){
+      meta.appendChild(el('<div class="warn">This video file is not stored in this browser. Choose the same file again to re-attach it.</div>'));
+      var re=el('<label class="btn small" style="justify-self:start">Re-attach file…<input type="file" accept="video/*" hidden></label>');
+      re.querySelector("input").addEventListener("change",function(e){ var f=e.target.files[0]; if(!f) return; videoStore[v.key]=f; idb.put(v.key,f); v.name=f.name; v.type=f.type||v.type; v.size=f.size; touched(); renderVideoBox(box,p); });
+      meta.appendChild(re);
+    }
+    if(!/mp4|webm/.test(v.type)) meta.appendChild(el('<div class="warn">This format may not play on Windows or Android. Convert it to MP4 if you can.</div>'));
+    var req=el('<label class="check"><input type="checkbox"><span><b>Must watch to the end</b> before moving on</span></label>');
+    req.querySelector("input").checked=!!v.required;
+    req.querySelector("input").addEventListener("change",function(e){ v.required=e.target.checked; touched(); });
+    meta.appendChild(req);
+  } else {
+    meta.appendChild(el('<div><b>'+esc(v.site)+'</b></div>'));
+    meta.appendChild(el('<div class="vname"></div>')); meta.lastChild.textContent=v.url;
+    if(v.kind==="remote"){
+      var rq=el('<label class="check"><input type="checkbox"><span><b>Must watch to the end</b> before moving on</span></label>');
+      rq.querySelector("input").checked=!!v.required;
+      rq.querySelector("input").addEventListener("change",function(e){ v.required=e.target.checked; touched(); });
+      meta.appendChild(rq);
+    } else {
+      meta.appendChild(el('<span class="hint">Plays from '+esc(v.site)+' inside the course. Learners can skip it, so put anything they must know in the text too.</span>'));
+    }
+  }
+  var rm=el('<button class="btn small danger" type="button" style="justify-self:start">Remove video</button>');
+  rm.addEventListener("click",function(){ var k=v.kind==="file"?v.key:null; p.video=null; forgetVideo(k); touched(); renderVideoBox(box,p); });
+  meta.appendChild(rm);
+  box.appendChild(meta);
+}
+
+function shrinkImage(file){
+  return new Promise(function(res,rej){
+    var r=new FileReader();
+    r.onerror=rej;
+    r.onload=function(){
+      if(file.type==="image/gif"){ return res(r.result); }
+      var im=new Image();
+      im.onerror=rej;
+      im.onload=function(){
+        var max=1600, w=im.naturalWidth, h=im.naturalHeight;
+        if(w<=max && file.size<600000){ return res(r.result); }
+        var s=Math.min(1,max/w); var c=document.createElement("canvas"); c.width=Math.round(w*s); c.height=Math.round(h*s);
+        var ctx=c.getContext("2d"); ctx.fillStyle="#fff"; ctx.fillRect(0,0,c.width,c.height); ctx.drawImage(im,0,0,c.width,c.height);
+        res(c.toDataURL("image/jpeg",0.85));
+      };
+      im.src=r.result;
+    };
+    r.readAsDataURL(file);
+  });
+}
+
+function renderQuiz(ed){
+  ed.innerHTML =
+  '<div class="panel-head"><div><span class="eyebrow">cmi.core.score · pass mark '+state.passMark+'%</span><h2>Quiz</h2></div>'+
+  '<button class="btn small primary" type="button" id="q-add">+ Add question</button></div>'+
+  '<p class="hint" style="margin:-8px 0 18px">Tick the circle next to the correct answer. With no questions, the course reports <b>completed</b> when the learner reaches the last page. With questions, it reports <b>passed</b> or <b>failed</b> against the pass mark.</p>'+
+  '<div id="gen-slot"></div>'+
+  '<div class="qlist" id="qlist"></div>';
+  renderGenerator(ed.querySelector("#gen-slot"), ed);
+  var list=ed.querySelector("#qlist");
+  if(!state.quiz.length){ list.appendChild(el('<div class="issues">No questions yet. Add one to turn on the pass mark.</div>')); }
+  state.quiz.forEach(function(q,qi){ list.appendChild(questionCard(q,qi)); });
+  ed.querySelector("#q-add").addEventListener("click",function(){
+    state.quiz.push({id:uid("q"),q:"",options:["",""],correct:0,feedback:""}); touched(); renderQuiz(ed); renderNav();
+    var all=ed.querySelectorAll(".q textarea"); if(all.length) all[all.length-1].focus();
+  });
+}
+/* ---------- question writing: prompt + the three ways to reach Claude ---------- */
+// Keep buildPrompt in step with the copy in quiz-server/server.js
+function buildPrompt(req){
+  var levels={easy:"straightforward recall of facts stated in the content", mixed:"a mix of simple recall and short practical scenarios", hard:"short realistic workplace scenarios where the learner must apply the guidance"};
+  var existing=(req.existing||[]).map(function(q){ return "- "+q; }).join("\n");
+  return "You are writing an assessment for a workplace e-learning course. Write exactly "+req.count+" multiple-choice questions based ONLY on the course content below.\n\n"+
+"Rules:\n"+
+"- Use only facts, rules and procedures that appear in the content. Do not add outside knowledge.\n"+
+"- Questions should test "+(levels[req.level]||levels.mixed)+".\n"+
+"- Each question has 4 answer options (3 if the content only supports 3), exactly one correct.\n"+
+"- Wrong options must be plausible but clearly wrong according to the content. Do not use \"All of the above\" or \"None of the above\".\n"+
+"- Keep questions and answers short and in plain British English.\n"+
+"- Spread questions across the pages rather than repeating one point.\n"+
+"- Feedback: one sentence explaining why the correct answer is right, based on the content.\n"+
+(req.focus?"- Concentrate on: "+req.focus+"\n":"")+
+(existing?"- Do not repeat or closely reword these existing questions:\n"+existing+"\n":"")+
+"\nReply with ONLY a JSON array, no other text, in this shape:\n"+
+'[{"question":"...","options":["...","...","...","..."],"correct":0,"feedback":"...","page":1}]\n'+
+"\"correct\" is the zero-based index of the right option. \"page\" is the page number the question is based on.\n\n"+
+"COURSE TITLE: "+req.title+"\n\nCOURSE CONTENT:\n"+req.content;
+}
+function parseQuestionsText(t){
+  t=String(t||"").replace(/```(?:json)?/g,"");
+  var a=t.indexOf("["), b=t.lastIndexOf("]");
+  if(a<0 || b<a) throw {code:"invalid_json"};
+  try{ return JSON.parse(t.slice(a,b+1)); }catch(e){ throw {code:"invalid_json"}; }
+}
+var AI_KEY="scorm-studio-ai-v1";
+function aiLocal(){ try{ return JSON.parse(localStorage.getItem(AI_KEY))||{}; }catch(e){ return {}; } }
+function aiSettings(){
+  var s=aiLocal();
+  return {
+    proxyUrl: (s.proxyUrl!=null ? s.proxyUrl : STUDIO_CONFIG.proxyUrl||"").trim().replace(/\/+$/,""),
+    accessCode: (s.accessCode!=null ? s.accessCode : STUDIO_CONFIG.accessCode||"").trim(),
+    apiKey: (s.apiKey!=null ? s.apiKey : STUDIO_CONFIG.apiKey||"").trim(),
+    model: STUDIO_CONFIG.model || "claude-sonnet-5-5"
+  };
+}
+function aiRoute(){
+  return getSample().then(function(sm){
+    if(sm) return {kind:"claude", sample:sm, label:"your Claude account"};
+    var s=aiSettings();
+    if(s.proxyUrl) return {kind:"proxy", s:s, label:"quiz server"};
+    if(s.apiKey) return {kind:"key", s:s, label:"API key on this computer"};
+    return null;
+  });
+}
+function httpError(status, body){
+  var msg=(body && (body.error && body.error.message || body.message || body.error)) || "";
+  if(typeof msg!=="string") msg="";
+  if(status===401 || status===403) return {code: body && body.code==="bad_code" ? "bad_code" : "bad_key"};
+  if(status===402 || /credit balance/i.test(msg)) return {code:"no_credit"};
+  if(status===413) return {code:"too_large"};
+  if(status===429) return {code:"rate_limited", message: (body && body.message) || "Too many requests just now. Wait a minute and try again."};
+  return {code: (body && body.code) || ("http_"+status)};
+}
+function writeQuestions(req, signal){
+  return aiRoute().then(function(r){
+    if(!r) throw {code:"not_setup"};
+    if(r.kind==="claude"){
+      return r.sample.limits().catch(function(){ return null; }).then(function(lim){
+        var cap=lim && lim.maxInputBytes ? Math.floor(lim.maxInputBytes*0.6) : 120000;
+        if(req.content.length>cap) req.content=req.content.slice(0,cap)+"\n\n[content shortened]";
+        return r.sample.json(buildPrompt(req),{modelTier:"default", signal:signal});
+      });
+    }
+    if(req.content.length>150000) req.content=req.content.slice(0,150000)+"\n\n[content shortened]";
+    var url, opts;
+    if(r.kind==="proxy"){
+      if(!r.s.accessCode) throw {code:"not_setup"};
+      url=r.s.proxyUrl+"/generate";
+      opts={method:"POST", signal:signal, headers:{"Content-Type":"application/json","X-Access-Code":r.s.accessCode}, body:JSON.stringify(req)};
+    } else {
+      url="https://api.anthropic.com/v1/messages";
+      opts={method:"POST", signal:signal, headers:{"content-type":"application/json","x-api-key":r.s.apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+        body:JSON.stringify({model:r.s.model, max_tokens:4096, messages:[{role:"user", content:buildPrompt(req)}]})};
+    }
+    return fetch(url, opts).catch(function(e){ if(e && e.name==="AbortError") throw e; throw {code:"unreachable"}; }).then(function(res){
+      return res.text().then(function(txt){
+        var body=null; try{ body=JSON.parse(txt); }catch(e){}
+        if(!res.ok) throw httpError(res.status, body);
+        if(r.kind==="proxy"){ if(!body || !Array.isArray(body.questions)) throw {code:"invalid_json"}; return body.questions; }
+        var text=(body && body.content || []).filter(function(c){ return c.type==="text"; }).map(function(c){ return c.text; }).join("");
+        return parseQuestionsText(text);
+      });
+    });
+  });
+}
+function openAiSettings(){
+  var s=aiSettings(), local=aiLocal(), layer=document.getElementById("layer");
+  var fromFile = !!(STUDIO_CONFIG.proxyUrl || STUDIO_CONFIG.apiKey);
+  var mode = s.proxyUrl ? "proxy" : (s.apiKey ? "key" : "proxy");
+  layer.innerHTML='<div class="overlay" role="dialog" aria-modal="true" aria-labelledby="ai-h"><div class="dialog">'+
+    '<h3 id="ai-h">Question writing settings</h3>'+
+    '<p class="hint" style="margin:0 0 12px">Inside claude.ai your own Claude account is used and nothing here is needed. When this file is opened on its own, it needs one of these.'+(fromFile?' This copy already has team settings built in.':'')+'</p>'+
+    '<div class="opts-grid">'+
+      '<label class="check"><input type="radio" name="ai-mode" value="proxy"><span><b>Team quiz server</b> (recommended)<br><span class="hint">Your organiser gives you the address and access code. No API key on your computer.</span></span></label>'+
+      '<div id="ai-proxy" class="fields" style="padding-left:28px">'+
+        '<label class="f"><span>Server address</span><input type="text" id="ai-url" placeholder="https://quiz.example.co.uk" autocomplete="off"></label>'+
+        '<label class="f"><span>Access code</span><input type="text" id="ai-code" autocomplete="off"></label>'+
+      '</div>'+
+      '<label class="check"><input type="radio" name="ai-mode" value="key"><span><b>My own Claude API key</b><br><span class="hint">Saved only in this browser on this computer. Charges go to that key\'s account.</span></span></label>'+
+      '<div id="ai-keybox" class="fields" style="padding-left:28px"><label class="f"><span>API key</span><input type="text" id="ai-key" placeholder="sk-ant-…" autocomplete="off" spellcheck="false"></label></div>'+
+    '</div>'+
+    '<div class="status" id="ai-status"></div>'+
+    '<div class="dialog-actions"><button class="btn ghost" type="button" id="ai-clear">Clear saved settings</button><button class="btn" type="button" id="ai-test">Test</button><button class="btn" type="button" id="ai-cancel">Cancel</button><button class="btn primary" type="button" id="ai-save">Save</button></div>'+
+  '</div></div>';
+  var d=layer.querySelector(".dialog"), st=d.querySelector("#ai-status");
+  d.querySelector("#ai-url").value=s.proxyUrl; d.querySelector("#ai-code").value=s.accessCode; d.querySelector("#ai-key").value=s.apiKey;
+  function setMode(m){ mode=m; d.querySelectorAll('input[name="ai-mode"]').forEach(function(r){ r.checked=r.value===m; }); d.querySelector("#ai-proxy").hidden=m!=="proxy"; d.querySelector("#ai-keybox").hidden=m!=="key"; }
+  d.querySelectorAll('input[name="ai-mode"]').forEach(function(r){ r.addEventListener("change",function(){ setMode(r.value); }); });
+  setMode(mode);
+  function collect(){
+    return mode==="proxy" ? {proxyUrl:d.querySelector("#ai-url").value.trim(), accessCode:d.querySelector("#ai-code").value.trim(), apiKey:""}
+                          : {proxyUrl:"", accessCode:"", apiKey:d.querySelector("#ai-key").value.trim()};
+  }
+  function store(v){ try{ localStorage.setItem(AI_KEY, JSON.stringify(v)); return true; }catch(e){ return false; } }
+  d.querySelector("#ai-cancel").addEventListener("click",closeLayer);
+  d.querySelector("#ai-save").addEventListener("click",function(){
+    var v=collect();
+    if(mode==="proxy" && !/^https?:\/\//i.test(v.proxyUrl)){ st.textContent="Enter the full server address, starting with https://"; return; }
+    if(mode==="key" && !/^sk-ant-/.test(v.apiKey)){ st.textContent="That does not look like a Claude API key. They start with sk-ant-"; return; }
+    if(!store(v)){ st.textContent="Settings could not be saved in this browser (private window?)."; return; }
+    closeLayer(); toast("Question writing set up"); if(sel.type==="quiz") render();
+  });
+  d.querySelector("#ai-clear").addEventListener("click",function(){ try{ localStorage.removeItem(AI_KEY); }catch(e){} closeLayer(); toast(fromFile?"Back to the team settings built into this file":"Saved settings cleared"); if(sel.type==="quiz") render(); });
+  d.querySelector("#ai-test").addEventListener("click",function(){
+    var v=collect(), btn=this; btn.disabled=true; st.textContent="Testing…";
+    var p = mode==="proxy"
+      ? fetch(v.proxyUrl.replace(/\/+$/,"")+"/health",{headers:{"X-Access-Code":v.accessCode}}).then(function(r){ return r.json().catch(function(){ return {}; }).then(function(b){ if(r.status===401||r.status===403) throw {code:"bad_code"}; if(!r.ok) throw {code:"http_"+r.status}; return b; }); })
+      : fetch("https://api.anthropic.com/v1/models?limit=1",{headers:{"x-api-key":v.apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"}}).then(function(r){ if(r.status===401) throw {code:"bad_key"}; if(!r.ok) throw {code:"http_"+r.status}; return {}; });
+    p.then(function(b){ st.textContent = "Connected." + (b && b.remainingToday!=null ? " "+b.remainingToday+" requests left today." : ""); },
+      function(e){ var c=e && e.code; st.textContent = c==="bad_code" ? "Connected, but the access code was not accepted." : c==="bad_key" ? "The API key was not accepted." : c && c.indexOf("http_")===0 ? "The server answered with an error ("+c.slice(5)+")." : "Could not connect. Check the address and your internet connection."; })
+     .then(function(){ btn.disabled=false; });
+  });
+}
+
+/* ---------- quiz generator (asks Claude to write questions from the page content) ---------- */
+var gen = {count:5, level:"mixed", focus:"", busy:false, results:null, error:"", ctrl:null};
+var samplePromise=null;
+function getSample(){ if(!samplePromise){ samplePromise = (window.claude && window.claude.use) ? window.claude.use("sample").catch(function(){ return null; }) : Promise.resolve(null); } return samplePromise; }
+function courseText(){
+  return state.pages.map(function(p,i){
+    var parts=["## Page "+(i+1)+": "+(p.heading||"Untitled")];
+    if(p.body) parts.push(p.body.replace(/\*\*/g,""));
+    if(p.keyPoint) parts.push("Key point: "+p.keyPoint);
+    if(p.image && p.imageAlt) parts.push("Picture shows: "+p.imageAlt);
+    return parts.join("\n");
+  }).join("\n\n");
+}
+function shuffleArr(a){ a=a.slice(); for(var i=a.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function cleanGenerated(raw){
+  var arr = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.questions) ? raw.questions : []);
+  var seen={};
+  state.quiz.forEach(function(q){ seen[q.q.trim().toLowerCase()]=1; });
+  return arr.map(function(x){
+    if(!x || typeof x.question!=="string" || !Array.isArray(x.options)) return null;
+    var opts=x.options.map(function(o){ return String(o||"").trim(); }).filter(Boolean).slice(0,6);
+    var c=+x.correct;
+    if(opts.length<2 || !(c>=0 && c<x.options.length)) return null;
+    var right=String(x.options[c]).trim(); if(opts.indexOf(right)<0) return null;
+    var key=x.question.trim().toLowerCase(); if(seen[key]) return null; seen[key]=1;
+    // shuffle so the right answer is not always in the same place
+    var mixed=shuffleArr(opts);
+    return {q:x.question.trim(), options:mixed, correct:mixed.indexOf(right), feedback:String(x.feedback||"").trim(), page:+x.page||null, keep:true};
+  }).filter(Boolean);
+}
+function renderGenerator(slot, ed){
+  var textLen = courseText().replace(/## Page \d+:.*\n?/g,"").trim().length;
+  slot.innerHTML =
+    '<section class="gen" aria-labelledby="gen-h">'+
+      '<div><h3 id="gen-h">Generate questions from your pages</h3>'+
+      '<p class="hint" style="margin:4px 0 0">Claude reads the text on your pages and writes multiple-choice questions with feedback. Check each one before adding it.</p></div>'+
+      '<div class="gen-row">'+
+        '<label class="f"><span>How many</span><select id="gen-count">'+[3,5,8,10,15].map(function(n){ return '<option value="'+n+'"'+(n===gen.count?' selected':'')+'>'+n+' questions</option>'; }).join("")+'</select></label>'+
+        '<label class="f"><span>Difficulty</span><select id="gen-level">'+
+          [["easy","Straightforward recall"],["mixed","Mixed"],["hard","Scenario-based"]].map(function(o){ return '<option value="'+o[0]+'"'+(o[0]===gen.level?' selected':'')+'>'+o[1]+'</option>'; }).join("")+'</select></label>'+
+        '<label class="f wide"><span>Focus on <span class="hint">optional</span></span><input type="text" id="gen-focus" placeholder="e.g. what to do in an emergency"></label>'+
+      '</div>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center"><button class="btn primary" type="button" id="gen-go">Generate questions</button><span class="status" id="gen-status"></span>'+
+        '<span style="margin-left:auto;display:flex;gap:8px;align-items:center"><span class="hint">Using: <span id="gen-via">checking…</span></span><button class="btn small ghost" type="button" id="gen-setup">Settings</button></span></div>'+
+      '<div class="gen-out" id="gen-out"></div>'+
+    '</section>';
+  var go=slot.querySelector("#gen-go"), status=slot.querySelector("#gen-status"), out=slot.querySelector("#gen-out");
+  slot.querySelector("#gen-count").addEventListener("change",function(e){ gen.count=+e.target.value; });
+  slot.querySelector("#gen-level").addEventListener("change",function(e){ gen.level=e.target.value; });
+  var fi=slot.querySelector("#gen-focus"); fi.value=gen.focus; fi.addEventListener("input",function(){ gen.focus=fi.value; });
+
+  function paint(){
+    if(gen.busy){ go.textContent="Stop"; go.classList.remove("primary"); status.innerHTML='<span class="spin" aria-hidden="true"></span>Writing questions. This usually takes 20 to 40 seconds.'; }
+    else { go.textContent=gen.results?"Generate again":"Generate questions"; go.classList.add("primary"); status.textContent=gen.error||""; }
+    out.innerHTML="";
+    if(!gen.results || gen.busy) return;
+    if(!gen.results.length){ out.appendChild(el('<div class="issues">No usable questions came back. Try again, or add more detail to your pages.</div>')); return; }
+    gen.results.forEach(function(r,i){
+      var card=el('<div class="gq"><input type="checkbox" aria-label="Keep this question"><div><div class="qt"></div><ul></ul><div class="fbk"></div><div class="src"></div></div></div>');
+      var cb=card.querySelector("input"); cb.checked=r.keep; cb.id="gq-"+i;
+      cb.addEventListener("change",function(){ r.keep=cb.checked; addBtn(); });
+      card.querySelector(".qt").textContent=r.q;
+      var ul=card.querySelector("ul");
+      r.options.forEach(function(o,oi){ var li=document.createElement("li"); li.textContent=o+(oi===r.correct?"  ✓":""); if(oi===r.correct) li.className="ok"; ul.appendChild(li); });
+      card.querySelector(".fbk").textContent=r.feedback?("Feedback: "+r.feedback):"";
+      card.querySelector(".src").textContent=r.page && state.pages[r.page-1] ? "From page "+r.page+": "+(state.pages[r.page-1].heading||"") : "";
+      out.appendChild(card);
+    });
+    var bar=el('<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end"><button class="btn" type="button" id="gen-clear">Discard</button><button class="btn primary" type="button" id="gen-add"></button></div>');
+    out.appendChild(bar);
+    bar.querySelector("#gen-clear").addEventListener("click",function(){ gen.results=null; gen.error=""; paint(); });
+    bar.querySelector("#gen-add").addEventListener("click",function(){
+      var keep=gen.results.filter(function(r){ return r.keep; });
+      keep.forEach(function(r){ state.quiz.push({id:uid("q"), q:r.q, options:r.options, correct:r.correct, feedback:r.feedback}); });
+      gen.results=null; gen.error=""; touched(); renderQuiz(ed); renderNav();
+      toast("Added "+keep.length+" question"+(keep.length===1?"":"s")+" to the quiz. You can edit them below.");
+    });
+    addBtn();
+    function addBtn(){ var n=gen.results.filter(function(r){ return r.keep; }).length; var b=out.querySelector("#gen-add"); if(b){ b.textContent="Add "+n+" question"+(n===1?"":"s")+" to quiz"; b.disabled=!n; } }
+  }
+
+  go.addEventListener("click",function(){
+    if(gen.busy){ if(gen.ctrl) gen.ctrl.abort(); return; }
+    if(textLen<150){ gen.error="Add more text to your pages first. Questions can only be written from what is on them."; paint(); return; }
+    gen.busy=true; gen.error=""; gen.results=null; paint();
+    gen.ctrl=new AbortController();
+    var req={title:state.title, content:courseText(), count:gen.count, level:gen.level, focus:gen.focus.trim(), existing:state.quiz.map(function(q){ return q.q; })};
+    writeQuestions(req, gen.ctrl.signal).then(function(raw){
+      gen.results=cleanGenerated(raw);
+    }).catch(function(err){
+      var c=err && err.code;
+      if(c==="cancelled" || (err && err.name==="AbortError")) gen.error="Stopped.";
+      else if(c==="not_setup"){ gen.error=""; openAiSettings(); }
+      else if(c==="prompt_too_large" || c==="too_large") gen.error="The course is too long to send in one go. Use the Focus box to narrow it down, or ask for fewer questions.";
+      else if(c==="not_granted" || c==="sampling_disabled" || c==="not_declared") gen.error="Question writing needs permission to ask Claude, which was not given. Allow it when asked, or set up question writing in Settings.";
+      else if(c==="bad_code") gen.error="The quiz server did not accept the access code. Check it in Question writing settings.";
+      else if(c==="bad_key") gen.error="The API key was not accepted. Check it in Question writing settings.";
+      else if(c==="no_credit") gen.error="The Claude account behind question writing has run out of credit. Ask whoever set it up to top it up.";
+      else if(c==="rate_limited") gen.error=err.message || "Too many requests just now. Wait a minute and try again.";
+      else if(c==="unreachable") gen.error="Could not reach the quiz server. Check the internet connection and the server address in Question writing settings.";
+      else if(c==="invalid_json") gen.error="The reply could not be read. Try again, or ask for fewer questions.";
+      else gen.error="Questions could not be generated ("+(c||"error")+"). Try again in a moment.";
+    }).then(function(){ gen.busy=false; gen.ctrl=null; if(gen.repaint) gen.repaint(); });
+  });
+  slot.querySelector("#gen-setup").addEventListener("click", openAiSettings);
+  aiRoute().then(function(r){ var s=slot.querySelector("#gen-via"); if(s) s.textContent = r ? r.label : "Not set up yet"; });
+  gen.repaint = function(){ if(document.body.contains(slot)) paint(); };
+  paint();
+}
+
+function questionCard(q,qi,list,redraw){
+  list = list || state.quiz; redraw = redraw || render;
+  var c=el('<div class="q"></div>');
+  c.innerHTML=
+   '<div class="q-top"><span class="eyebrow">Question '+(qi+1)+'</span>'+
+   '<button class="btn small" type="button" data-a="up" aria-label="Move up">↑</button><button class="btn small" type="button" data-a="down" aria-label="Move down">↓</button>'+
+   '<button class="btn small danger" type="button" data-a="del">Delete</button></div>'+
+   '<label class="f"><span>Question</span><textarea class="short" id="qq-'+q.id+'"></textarea></label>'+
+   '<div class="f" style="display:grid;gap:8px"><span style="font-weight:600;font-size:13.5px">Answers</span><div class="opts" style="display:grid;gap:8px"></div>'+
+   '<button class="btn small" type="button" data-a="addopt" style="justify-self:start">+ Add answer</button></div>'+
+   '<label class="f"><span>Feedback <span class="hint">optional · shown with the results</span></span><input type="text" id="qf-'+q.id+'"></label>';
+  var qt=c.querySelector("textarea"); qt.value=q.q; qt.addEventListener("input",function(){ q.q=qt.value; touched(); });
+  var fb=c.querySelector("#qf-"+q.id); fb.value=q.feedback||""; fb.addEventListener("input",function(){ q.feedback=fb.value; touched(); });
+  var opts=c.querySelector(".opts");
+  function drawOpts(){
+    opts.innerHTML="";
+    q.options.forEach(function(o,oi){
+      var r=el('<div class="opt'+(q.correct===oi?' correct':'')+'"><input type="radio" name="c-'+q.id+'" aria-label="Mark as correct answer"><input type="text" placeholder="Answer '+(oi+1)+'"><button class="btn small ghost" type="button" aria-label="Remove answer">✕</button></div>');
+      var rad=r.children[0], txt=r.children[1], x=r.children[2];
+      rad.checked = q.correct===oi; txt.value=o; txt.id="qo-"+q.id+"-"+oi;
+      rad.addEventListener("change",function(){ q.correct=oi; touched(); drawOpts(); });
+      txt.addEventListener("input",function(){ q.options[oi]=txt.value; touched(); });
+      x.disabled = q.options.length<=2;
+      x.addEventListener("click",function(){ q.options.splice(oi,1); if(q.correct>=q.options.length) q.correct=q.options.length-1; else if(q.correct>oi) q.correct--; touched(); drawOpts(); });
+      opts.appendChild(r);
+    });
+    c.querySelector('[data-a="addopt"]').disabled = q.options.length>=6;
+  }
+  drawOpts();
+  c.addEventListener("click",function(e){
+    var a=e.target.closest("[data-a]"); if(!a) return; var act=a.dataset.a, Q=list;
+    if(act==="addopt"){ q.options.push(""); touched(); drawOpts(); }
+    else if(act==="up" && qi>0){ Q.splice(qi-1,0,Q.splice(qi,1)[0]); touched(); redraw(); }
+    else if(act==="down" && qi<Q.length-1){ Q.splice(qi+1,0,Q.splice(qi,1)[0]); touched(); redraw(); }
+    else if(act==="del"){
+      if(a.dataset.armed){ Q.splice(qi,1); touched(); redraw(); toast("Question deleted"); }
+      else { a.dataset.armed="1"; a.textContent="Confirm delete"; setTimeout(function(){ delete a.dataset.armed; a.textContent="Delete"; },3500); }
+    }
+  });
+  return c;
+}
+
+/* ---------- validation ---------- */
+function problems(){
+  var out=[];
+  if(!state.title.trim()) out.push("Give the course a title (Settings).");
+  if(!state.pages.length) out.push("Add at least one page.");
+  state.pages.forEach(function(p,i){
+    if(!p.heading.trim() && !p.body.trim() && !p.image && !p.video) out.push("Page "+(i+1)+" is empty.");
+    if(p.video && p.video.kind==="file" && !videoStore[p.video.key]) out.push("Page "+(i+1)+": re-attach the video file \""+p.video.name+"\".");
+  });
+  function checkQ(q,label){
+    if(!q.q.trim()) out.push(label+" has no question text.");
+    var filled=q.options.filter(function(o){ return o.trim(); }).length;
+    if(filled<2) out.push(label+" needs at least two answers.");
+    if(!q.options[q.correct] || !q.options[q.correct].trim()) out.push(label+": the answer marked correct is blank.");
+  }
+  state.pages.forEach(function(p,i){
+    if(!p.check || !p.check.on) return;
+    if(!p.check.questions.length) out.push("Page "+(i+1)+": the knowledge check is switched on but has no questions.");
+    p.check.questions.forEach(function(q,qi){ checkQ(q,"Page "+(i+1)+" knowledge check, question "+(qi+1)); });
+  });
+  state.quiz.forEach(function(q,i){ checkQ(q,"Quiz question "+(i+1)); });
+  return out;
+}
+
+/* ---------- learner player (goes inside the package as index.html) ---------- */
+function videoData(p,i,videoMap){
+  var v=p.video; if(!v) return null;
+  if(v.kind==="file"){
+    var src = videoMap ? videoMap[i] : (videoStore[v.key] ? URL.createObjectURL(videoStore[v.key]) : "");
+    return {kind:"file", src:src, type:v.type, required:!!v.required};
+  }
+  return {kind:v.kind, src:v.src, url:v.url, site:v.site, required: v.kind==="remote" && !!v.required};
+}
+function mixHex(a,b,t){ var x=hexToRgb(a), y=hexToRgb(b); return "#"+x.map(function(v,i){ var n=Math.round(v*(1-t)+y[i]*t); return (n<16?"0":"")+n.toString(16); }).join(""); }
+function designData(assetMap){
+  var d=state.design, dark=luminance(d.card)<0.3;
+  var hf=FONTS[d.headingFont]||FONTS.system, bf=FONTS[d.bodyFont]||FONTS.system;
+  var fams=[]; [hf,bf].forEach(function(f){ if(f.g && fams.indexOf(f.g)<0) fams.push(f.g); });
+  var calls={brand:d.accent, info:"#2563EB", warning:"#D97706", success:"#16A34A", danger:"#DC2626"};
+  var callouts={}; Object.keys(calls).forEach(function(k){ callouts[k]={edge:calls[k], bg:mixHex(d.card, calls[k], dark?0.22:0.1)}; });
+  return {
+    accent:d.accent, onAccent:onColour(d.accent), bg:d.bg, card:d.card, text:d.text,
+    muted:mixHex(d.text, d.card, 0.38), line:mixHex(d.text, d.card, 0.84),
+    okBg:mixHex(d.card,"#2E7D4F",dark?0.25:0.1), badBg:mixHex(d.card,"#B3402F",dark?0.25:0.1),
+    ok: dark?"#6FCB94":"#2E7D4F", bad: dark?"#F08A78":"#B3402F",
+    headerBg: d.header==="brand" ? d.accent : d.card, headerInk: d.header==="brand" ? onColour(d.accent) : d.text,
+    hfont:hf.stack, bfont:bf.stack, fontsUrl: fams.length ? "https://fonts.googleapis.com/css2?"+fams.map(function(f){ return "family="+f; }).join("&")+"&display=swap" : "",
+    maxw: d.width==="narrow"?640 : d.width==="wide"?980 : 760,
+    radius: d.corners==="square"?2:12, radius2: d.corners==="square"?2:8,
+    fs: d.textSize==="large"?19:17,
+    callouts:callouts,
+    logo: d.logo ? (assetMap ? assetMap.logo : d.logo) : null, logoAlt: d.logoAlt||"",
+    cover: !!d.cover, coverImage: d.coverImage ? (assetMap ? assetMap.cover : d.coverImage) : null,
+    coverButton: (d.coverButton||"Start course").trim()||"Start course"
+  };
+}
+function courseData(imageMap, videoMap, assetMap){
+  return {
+    preview: !imageMap,
+    title:state.title, description:state.description, author:state.author, scorm:state.scorm,
+    passMark:state.passMark, accent:state.design.accent, showAnswers:state.showAnswers, allowRetry:state.allowRetry, shuffle:state.shuffle,
+    design: designData(assetMap),
+    pages:state.pages.map(function(p,i){
+      var chk = (p.check && p.check.on && p.check.questions.length) ? {mustPass:p.check.mustPass!==false, questions:p.check.questions.map(cleanQ)} : null;
+      return {heading:p.heading, body:p.body, keyPoint:p.keyPoint||"", callout:p.callout||"brand", image:p.image ? (imageMap?imageMap[i]:p.image) : null, imageAlt:p.imageAlt||"", imagePos:p.imagePos||"above", video:videoData(p,i,videoMap), check:chk};
+    }),
+    quiz:state.quiz.map(cleanQ)
+  };
+}
+function cleanQ(q){
+  // drop blank answers but keep the correct index pointing at the right one
+  var opts=[], correct=0;
+  q.options.forEach(function(o,oi){ if(o.trim()){ if(oi===q.correct) correct=opts.length; opts.push(o); } });
+  return {q:q.q, options:opts, correct:correct, feedback:q.feedback||""};
+}
+
+function playerHTML(data){
+  var D=data.design, json = JSON.stringify(data).replace(/</g,"\\u003c");
+  var vars=":root{--accent:"+D.accent+";--on-accent:"+D.onAccent+";--bg:"+D.bg+";--card:"+D.card+";--ink:"+D.text+";--muted:"+D.muted+";--line:"+D.line+
+    ";--ok:"+D.ok+";--bad:"+D.bad+";--ok-bg:"+D.okBg+";--bad-bg:"+D.badBg+";--hd-bg:"+D.headerBg+";--hd-ink:"+D.headerInk+
+    ";--hfont:"+D.hfont+";--bfont:"+D.bfont+";--maxw:"+D.maxw+"px;--r:"+D.radius+"px;--r2:"+D.radius2+"px;--fs:"+D.fs+"px}";
+  var calls=Object.keys(D.callouts).map(function(k){ var c=D.callouts[k]; return ".key.k-"+k+"{border-left-color:"+c.edge+";background:"+c.bg+"}"; }).join("\n");
+  return '<!DOCTYPE html>\n<html lang="en-GB">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>'+esc(data.title)+'</title>\n'+
+    (D.fontsUrl?'<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n<link rel="stylesheet" href="'+esc(D.fontsUrl)+'">\n':'')+
+    '<style>\n'+vars+'\n'+PLAYER_CSS+'\n'+calls+'\n</style>\n</head>\n<body>\n<div id="app"></div>\n<script type="application/json" id="course">'+json+'<\/script>\n<script>\n'+PLAYER_JS+'\n<\/script>\n</body>\n</html>\n';
+}
+
+var PLAYER_CSS = [
+"*{box-sizing:border-box}",
+"html,body{margin:0;height:100%}",
+"body{font-family:var(--bfont);background:var(--bg);color:var(--ink);font-size:var(--fs);line-height:1.6;display:flex;flex-direction:column}",
+"#app{flex:1;display:flex;flex-direction:column;min-height:0}",
+"main{min-height:0}main:focus{outline:none}",
+"h1,h2,h3,.score{font-family:var(--hfont)}",
+"header{background:var(--hd-bg);color:var(--hd-ink);border-bottom:1px solid var(--line);padding:12px 20px}",
+".hd{max-width:var(--maxw);margin:0 auto;display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center}",
+".hd h1{font-size:16px;margin:0;margin-right:auto;font-weight:600;display:flex;align-items:center;gap:12px;min-width:0}",
+".hd .logo{height:34px;width:auto;max-width:180px;object-fit:contain;display:block}",
+".count{font-size:13px;opacity:.75;font-variant-numeric:tabular-nums}",
+".bar{height:4px;background:var(--line)}.bar i{display:block;height:100%;background:var(--accent);transition:width .3s}",
+"main{flex:1;padding:28px 20px 40px;overflow:auto}",
+".card{--pad:32px;max-width:var(--maxw);margin:0 auto;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:var(--pad);overflow:hidden}",
+"@media(max-width:560px){.card{--pad:20px}main{padding:16px 12px 28px}}",
+"h2{font-size:1.65em;line-height:1.2;margin:0 0 16px;text-wrap:balance}",
+"p{margin:0 0 14px}ul{margin:0 0 14px;padding-left:22px}li{margin:4px 0}",
+"img.hero{display:block;max-width:100%;height:auto;border-radius:var(--r2);margin:0 0 20px}",
+"img.hero.below{margin:6px 0 20px}",
+"img.banner{display:block;width:calc(100% + var(--pad) * 2);max-width:none;height:auto;max-height:340px;object-fit:cover;margin:calc(var(--pad) * -1) calc(var(--pad) * -1) 24px}",
+".split{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:24px;align-items:start;margin-bottom:6px}",
+".split.right{grid-template-columns:minmax(0,3fr) minmax(0,2fr)}",
+".split.right img{order:2}",
+".split img{display:block;width:100%;height:auto;border-radius:var(--r2)}",
+"@media(max-width:640px){.split,.split.right{grid-template-columns:minmax(0,1fr)}.split.right img{order:0}}",
+".vid{margin:0 0 20px;border-radius:var(--r2);overflow:hidden;background:#000}",
+".vid video{display:block;width:100%;max-height:70vh}",
+".vid.embed{position:relative;aspect-ratio:16/9;max-width:100%}",
+".vid.embed iframe{position:absolute;inset:0;width:100%;height:100%;border:0}",
+".vph{aspect-ratio:16/9;max-width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:#fff;text-align:center;padding:16px;font-size:15px}",
+".vph a{color:#fff}",
+".vnote{font-size:14px;color:var(--muted);margin:-10px 0 18px}.vnote.ok{color:var(--ok)}",
+".key{border-left:4px solid var(--accent);padding:12px 16px;border-radius:0 var(--r2) var(--r2) 0;margin-top:20px;font-weight:600}",
+"footer{background:var(--card);border-top:1px solid var(--line);padding:12px 20px}",
+".ft{max-width:var(--maxw);margin:0 auto;display:flex;justify-content:space-between;gap:12px}",
+"button{font:inherit;font-size:16px;border-radius:var(--r2);padding:10px 20px;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink)}",
+"button.go{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}",
+"button.go:hover{filter:brightness(1.08)}",
+"button:disabled{opacity:.4;cursor:not-allowed}",
+"button:focus-visible,input:focus-visible+span{outline:3px solid var(--accent);outline-offset:2px}",
+".q{margin:0 0 26px}.q h3{font-size:1.05em;margin:0 0 10px}",
+".opt{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--line);border-radius:var(--r2);padding:11px 14px;margin:8px 0;cursor:pointer}",
+".opt:hover{border-color:var(--accent)}.opt input{margin-top:6px;accent-color:var(--accent)}",
+".opt.right{border-color:var(--ok);background:var(--ok-bg)}.opt.wrong{border-color:var(--bad);background:var(--bad-bg)}",
+".fb{font-size:.9em;color:var(--muted);margin-top:6px}",
+".verdict{font-size:.92em;margin-top:8px;padding:8px 12px;border-radius:var(--r2)}",
+".verdict.ok{background:var(--ok-bg);color:var(--ink)}.verdict.ok strong{color:var(--ok)}",
+".verdict.no{background:var(--bad-bg);color:var(--ink)}.verdict.no strong{color:var(--bad)}",
+".score{font-size:56px;font-weight:700;line-height:1;margin:8px 0;font-variant-numeric:tabular-nums}",
+".pass{color:var(--ok)}.fail{color:var(--bad)}",
+".muted{color:var(--muted)}",
+".tag{display:inline-block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}",
+".cover{text-align:center;padding-bottom:calc(var(--pad) + 8px)}",
+".cover img.banner{margin-bottom:28px}",
+".cover .clogo{height:56px;width:auto;max-width:240px;object-fit:contain;margin:4px auto 18px;display:block}",
+".cover h1{font-size:2.1em;line-height:1.15;margin:0 0 12px;text-wrap:balance}",
+".cover .desc{color:var(--muted);max-width:52ch;margin:0 auto 18px}",
+".cover .meta{font-size:14px;color:var(--muted);margin-bottom:24px}",
+".cover button.go{font-size:18px;padding:13px 30px}",
+"@media(prefers-reduced-motion:reduce){*{transition:none!important}}"
+].join("\n");
+
+var PLAYER_JS = String(function(){
+var C = JSON.parse(document.getElementById("course").textContent);
+var HAS_QUIZ = C.quiz.length > 0;
+
+/* --- SCORM runtime wrapper (1.2 and 2004) --- */
+var S = { api:null, v:null, t0:new Date(), done:false };
+function scan(w, name){ var n=0; while(w && n<12){ try{ if(w[name]) return w[name]; }catch(e){} if(w.parent===w) break; w=w.parent; n++; } return null; }
+function locate(w){
+  var order = C.scorm==="2004" ? [["API_1484_11","2004"],["API","1.2"]] : [["API","1.2"],["API_1484_11","2004"]];
+  for(var i=0;i<order.length;i++){ var a=scan(w, order[i][0]); if(a){ S.api=a; S.v=order[i][1]; return true; } }
+  return false;
+}
+try{ if(!locate(window) && window.opener) locate(window.opener); }catch(e){}
+function call(fn12, fn04){ var a=[].slice.call(arguments,2); try{ return S.api[S.v==="2004"?fn04:fn12].apply(S.api,a); }catch(e){ return ""; } }
+function get(k12,k04){ return S.api ? String(call("LMSGetValue","GetValue", S.v==="2004"?k04:k12) || "") : ""; }
+function set(k12,k04,v){ if(S.api) call("LMSSetValue","SetValue", S.v==="2004"?k04:k12, String(v)); }
+function commit(){ if(S.api) call("LMSCommit","Commit",""); }
+if(S.api) call("LMSInitialize","Initialize","");
+
+function fmtTime(ms){
+  var s=Math.max(0,Math.round(ms/1000));
+  if(S.v==="2004") return "PT"+s+"S";
+  var h=Math.floor(s/3600), m=Math.floor(s%3600/60), x=s%60, p=function(n){ return (n<10?"0":"")+n; };
+  return (h<10?"000":h<100?"00":h<1000?"0":"")+h+":"+p(m)+":"+p(x);
+}
+
+/* --- learner state --- */
+var visited = [], watched = [], checked = [], page = 0, finished = false, lastScore = null;
+(function resume(){
+  var raw = get("cmi.suspend_data","cmi.suspend_data");
+  try{ var d=JSON.parse(raw); if(d){ visited=d.v||[]; watched=d.w||[]; checked=d.k||[]; finished=!!d.f; lastScore=(d.s==null?null:d.s); } }catch(e){}
+  var loc = parseInt(get("cmi.core.lesson_location","cmi.location"),10);
+  if(!isNaN(loc) && loc>=0 && loc<=C.pages.length) page=loc;
+  if(S.v==="1.2"){ var st=get("cmi.core.lesson_status"); if(st===""||st==="not attempted") set("cmi.core.lesson_status","","incomplete"); }
+  else if(S.v==="2004"){ var cs=get("","cmi.completion_status"); if(cs===""||cs==="not attempted"||cs==="unknown") set("","cmi.completion_status","incomplete"); }
+  commit();
+})();
+
+function save(){
+  set("cmi.core.lesson_location","cmi.location", page);
+  set("cmi.suspend_data","cmi.suspend_data", JSON.stringify({v:visited,w:watched,k:checked,f:finished?1:0,s:lastScore}));
+  commit();
+}
+function markComplete(){
+  finished = true;
+  if(S.v==="1.2") set("cmi.core.lesson_status","","completed");
+  else { set("","cmi.completion_status","completed"); set("","cmi.success_status","passed"); }
+  save();
+}
+function reportScore(pct, passed){
+  lastScore = pct;
+  set("cmi.core.score.min","cmi.score.min",0);
+  set("cmi.core.score.max","cmi.score.max",100);
+  set("cmi.core.score.raw","cmi.score.raw",pct);
+  if(S.v==="2004") set("","cmi.score.scaled",(pct/100).toFixed(2));
+  if(passed){ finished=true; if(S.v==="1.2") set("cmi.core.lesson_status","","passed"); else { set("","cmi.success_status","passed"); set("","cmi.completion_status","completed"); } }
+  else { if(S.v==="1.2") set("cmi.core.lesson_status","","failed"); else { set("","cmi.success_status","failed"); set("","cmi.completion_status", C.allowRetry ? "incomplete" : "completed"); } }
+  save();
+}
+function terminate(){
+  if(!S.api || S.done) return; S.done=true;
+  save();
+  set("cmi.core.session_time","cmi.session_time", fmtTime(new Date()-S.t0));
+  if(S.v==="1.2") set("cmi.core.exit","", finished?"":"suspend"); else set("","cmi.exit", finished?"normal":"suspend");
+  commit();
+  call("LMSFinish","Terminate","");
+}
+window.addEventListener("pagehide", terminate);
+window.addEventListener("beforeunload", terminate);
+
+/* --- rendering --- */
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+function inline(s){ return esc(s).replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>"); }
+function rich(text){
+  var out="", blocks=String(text||"").replace(/\r/g,"").split(/\n\s*\n/);
+  blocks.forEach(function(b){
+    var lines=b.split("\n").filter(function(l){ return l.trim(); }); if(!lines.length) return;
+    var buf=[], list=[];
+    function flushP(){ if(buf.length){ out+="<p>"+buf.map(inline).join("<br>")+"</p>"; buf=[]; } }
+    function flushL(){ if(list.length){ out+="<ul>"+list.map(function(l){ return "<li>"+inline(l)+"</li>"; }).join("")+"</ul>"; list=[]; } }
+    lines.forEach(function(l){ var m=l.match(/^\s*[-*•]\s+(.*)$/); if(m){ flushP(); list.push(m[1]); } else { flushL(); buf.push(l.trim()); } });
+    flushP(); flushL();
+  });
+  return out;
+}
+function videoHTML(v, mustWatch){
+  if(!v || !v.src) return "";
+  if(v.kind==="embed"){
+    if(C.preview) return '<div class="vid"><div class="vph"><strong>'+esc(v.site)+' video</strong><span>Plays here once the course is in Bridge.</span><a href="'+esc(v.url)+'" target="_blank" rel="noopener">Open the video</a></div></div>';
+    return '<div class="vid embed"><iframe src="'+esc(v.src)+'" title="'+esc(v.site)+' video" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen></iframe></div>';
+  }
+  return '<div class="vid"><video id="vid" controls playsinline preload="metadata"><source src="'+esc(v.src)+'"'+(v.type?' type="'+esc(v.type)+'"':'')+'>Your browser cannot play this video.</video></div>'+
+    (mustWatch?'<p class="vnote" id="vnote">Watch the video to the end to continue.</p>':'');
+}
+function shuffle(a){ a=a.slice(); for(var i=a.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+
+var app=document.getElementById("app");
+var TOTAL = C.pages.length + (HAS_QUIZ?1:0);
+var quizOrder=null, answers={}, result=null, onCover=false;
+
+function showCover(){
+  var D=C.design||{};
+  onCover=true;
+  var meta=C.pages.length+" page"+(C.pages.length===1?"":"s")+(HAS_QUIZ?" · "+C.quiz.length+"-question quiz, pass mark "+C.passMark+"%":"");
+  shell((D.coverImage?'<img class="banner" src="'+esc(D.coverImage)+'" alt="">':'')+
+    (D.logo?'<img class="clogo" src="'+esc(D.logo)+'" alt="'+esc(D.logoAlt||"")+'">':'')+
+    '<h1>'+esc(C.title)+'</h1>'+
+    (C.description?'<p class="desc">'+inline(C.description)+'</p>':'')+
+    '<div class="meta">'+meta+(C.author?' · '+esc(C.author):'')+'</div>'+
+    '<button class="go" id="start">'+esc(D.coverButton||"Start course")+'</button>', "");
+  document.getElementById("start").onclick=function(){ page=0; showPage(); };
+}
+
+function shell(inner, foot){
+  var pct = Math.round((Math.min(page+1,TOTAL)/TOTAL)*100);
+  if(finished && !HAS_QUIZ) pct=100;
+  var D=C.design||{};
+  var count = onCover ? "" : (page<C.pages.length?'Page '+(page+1)+' of '+C.pages.length:(HAS_QUIZ?'Quiz':''));
+  if(onCover) pct=0;
+  app.innerHTML =
+    '<header><div class="hd"><h1>'+(D.logo?'<img class="logo" src="'+esc(D.logo)+'" alt="'+esc(D.logoAlt||"")+'">':'')+'<span>'+esc(C.title)+'</span></h1><span class="count">'+count+'</span></div></header>'+
+    '<div class="bar" aria-hidden="true"><i style="width:'+pct+'%"></i></div>'+
+    '<main id="main" tabindex="-1"><div class="card'+(onCover?' cover':'')+'">'+inner+'</div></main>'+
+    (foot?'<footer><div class="ft">'+foot+'</div></footer>':'');
+  var m=document.getElementById("main"); m.scrollTop=0; try{ m.focus({preventScroll:true}); }catch(e){}
+}
+
+function showPage(){
+  if(visited.indexOf(page)<0) visited.push(page);
+  var p=C.pages[page], last = page===C.pages.length-1;
+  var v = p.video, mustWatch = !!(v && v.required && v.kind!=="embed" && watched.indexOf(page)<0);
+  onCover=false;
+  var pos=p.imagePos||"above", img=p.image ? '<img src="'+esc(p.image)+'" alt="'+esc(p.imageAlt)+'"' : "";
+  var text=rich(p.body), main;
+  if(img && (pos==="left"||pos==="right")) main='<div class="split '+pos+'">'+img+'><div>'+text+'</div></div>';
+  else if(img && pos==="below") main=text+img+' class="hero below">';
+  else if(img && pos==="above") main=img+' class="hero">'+text;
+  else main=text;
+  var body = (img && pos==="banner" ? img+' class="banner">' : '') +
+    (page===0 && C.description && !(C.design && C.design.cover) ? '<p class="muted">'+inline(C.description)+'</p>' : '') +
+    '<h2>'+inline(p.heading)+'</h2>'+
+    videoHTML(v, mustWatch)+
+    main+
+    (p.keyPoint?'<div class="key k-'+esc(p.callout||"brand")+'">'+inline(p.keyPoint)+'</div>':'');
+  var nextLabel = last ? (HAS_QUIZ ? "Start quiz" : "Finish") : "Next";
+  shell(body, '<button id="back" '+(page===0?'disabled':'')+'>Back</button><button class="go" id="next">'+nextLabel+'</button>');
+  var nextBtn=document.getElementById("next");
+  if(mustWatch){
+    nextBtn.disabled=true;
+    var vid=document.getElementById("vid"), note=document.getElementById("vnote");
+    var done=function(){
+      if(watched.indexOf(page)<0){ watched.push(page); save(); }
+      nextBtn.disabled=false; if(note){ note.textContent="Video complete. You can continue."; note.className="vnote ok"; }
+    };
+    if(vid){
+      vid.addEventListener("ended",done);
+      vid.addEventListener("timeupdate",function(){ if(vid.duration && vid.currentTime>=vid.duration-0.75) done(); });
+      vid.addEventListener("error",function(){ nextBtn.disabled=false; if(note) note.textContent="The video could not be played. You can continue."; });
+    } else nextBtn.disabled=false;
+  }
+  document.getElementById("back").onclick=function(){ if(page===0 && C.design && C.design.cover){ showCover(); return; } page--; save(); showPage(); };
+  if(page===0 && C.design && C.design.cover) document.getElementById("back").disabled=false;
+  nextBtn.onclick=function(){
+    if(p.check && checked.indexOf(page)<0){ showCheck(); return; }
+    advance();
+  };
+  save();
+}
+
+function advance(){
+  page++;
+  if(page>=C.pages.length){
+    if(HAS_QUIZ){ page=C.pages.length; save(); startQuiz(); }
+    else { page=C.pages.length-1; markComplete(); showDone(); }
+  } else { save(); showPage(); }
+}
+
+/* --- knowledge check after a page --- */
+function showCheck(){
+  onCover=false;
+  var p=C.pages[page], K=p.check, picks={}, marked=null;
+  function draw(){
+    var html='<span class="tag">Knowledge check</span><h2>'+inline(p.heading)+'</h2>'+
+      '<p class="muted">'+(K.mustPass?'Answer '+(K.questions.length===1?'this question':'these questions')+' correctly to carry on.':'Quick practice. This does not count towards your score.')+'</p>';
+    K.questions.forEach(function(q,qi){
+      var res = marked ? marked[qi] : null;
+      html+='<fieldset class="q" style="border:0;padding:0"><legend><h3>'+(K.questions.length>1?(qi+1)+'. ':'')+inline(q.q)+'</h3></legend>';
+      q.options.forEach(function(o,oi){
+        var cls="";
+        if(res){
+          if(picks[qi]===oi) cls = res.ok ? " right" : " wrong";
+          else if(!K.mustPass && oi===q.correct) cls=" right";
+        }
+        var lock = res && (res.ok || !K.mustPass);
+        html+='<label class="opt'+cls+'"><input type="radio" name="k'+qi+'" value="'+oi+'"'+(picks[qi]===oi?' checked':'')+(lock?' disabled':'')+'><span>'+inline(o)+'</span></label>';
+      });
+      if(res){
+        html+='<div class="verdict '+(res.ok?'ok':'no')+'"><strong>'+(res.ok?'Correct.':'Not quite.')+'</strong>'+
+          (res.ok ? (q.feedback ? ' '+inline(q.feedback) : '')
+                  : K.mustPass ? ' Have another look at the page, then try again.'
+                  : ' The correct answer is highlighted in green.'+(q.feedback ? ' '+inline(q.feedback) : ''))+'</div>';
+      }
+      html+='</fieldset>';
+    });
+    var allOk = marked && marked.every(function(r){ return r.ok; });
+    var foot;
+    if(!marked) foot='<button id="kback">Back to page</button><button class="go" id="kcheck" disabled>Check answers</button>';
+    else if(allOk || !K.mustPass) foot='<button id="kback">Back to page</button><button class="go" id="kgo">Continue</button>';
+    else foot='<button id="kback">Back to page</button><button class="go" id="kretry">Try again</button>';
+    shell(html, foot);
+    var cnt=document.querySelector(".count"); if(cnt) cnt.textContent="Page "+(page+1)+" of "+C.pages.length+" · Knowledge check";
+    var b;
+    app.querySelectorAll('input[type=radio]').forEach(function(r){ r.onchange=function(){ picks[+r.name.slice(1)]=+r.value; var c=document.getElementById("kcheck"); if(c) c.disabled=Object.keys(picks).length<K.questions.length; }; });
+    if(b=document.getElementById("kcheck")){ b.disabled=Object.keys(picks).length<K.questions.length; b.onclick=function(){
+      marked=K.questions.map(function(q,qi){ return {ok:picks[qi]===q.correct}; });
+      if(marked.every(function(r){ return r.ok; }) || !K.mustPass){ if(checked.indexOf(page)<0){ checked.push(page); save(); } }
+      draw();
+    }; }
+    if(b=document.getElementById("kretry")) b.onclick=function(){
+      // keep the right answers, clear the wrong ones
+      marked.forEach(function(r,qi){ if(!r.ok) delete picks[qi]; });
+      var keep=marked; marked=null; draw();
+      keep.forEach(function(r,qi){ if(r.ok) app.querySelectorAll('input[name="k'+qi+'"]').forEach(function(x){ x.disabled=true; }); });
+    };
+    if(b=document.getElementById("kgo")) b.onclick=advance;
+    if(b=document.getElementById("kback")) b.onclick=function(){ showPage(); };
+  }
+  draw();
+}
+
+function startQuiz(){
+  answers={}; result=null;
+  quizOrder = C.quiz.map(function(q,i){ var o=q.options.map(function(t,oi){ return {t:t,oi:oi}; }); return {i:i, opts: C.shuffle?shuffle(o):o}; });
+  if(C.shuffle) quizOrder=shuffle(quizOrder);
+  showQuiz();
+}
+function showQuiz(){
+  onCover=false;
+  var html='<span class="tag">Assessment</span><h2>Check your understanding</h2><p class="muted">Answer every question, then submit. You need '+C.passMark+'% to pass.</p>';
+  quizOrder.forEach(function(item,n){
+    var q=C.quiz[item.i];
+    html+='<fieldset class="q" style="border:0;padding:0"><legend><h3>'+(n+1)+'. '+inline(q.q)+'</h3></legend>';
+    item.opts.forEach(function(o){
+      var cls="";
+      if(result && C.showAnswers){ if(o.oi===q.correct) cls=" right"; else if(answers[item.i]===o.oi) cls=" wrong"; }
+      html+='<label class="opt'+cls+'"><input type="radio" name="q'+item.i+'" value="'+o.oi+'"'+(answers[item.i]===o.oi?' checked':'')+(result?' disabled':'')+'><span>'+inline(o.t)+'</span></label>';
+    });
+    if(result && C.showAnswers && q.feedback) html+='<div class="fb">'+inline(q.feedback)+'</div>';
+    html+='</fieldset>';
+  });
+  if(result){
+    html='<div style="margin-bottom:28px"><span class="tag">Your result</span><div class="score '+(result.passed?'pass':'fail')+'">'+result.pct+'%</div><p><strong>'+(result.passed?'Well done, you passed.':'Not quite. You need '+C.passMark+'% to pass.')+'</strong> You answered '+result.right+' of '+C.quiz.length+' correctly.</p></div>'+(C.showAnswers?html:'');
+  }
+  var foot;
+  if(!result) foot='<button id="back">Back to pages</button><button class="go" id="submit" disabled>Submit answers</button>';
+  else if(result.passed) foot='<span></span><button class="go" id="finish">Finish course</button>';
+  else if(C.allowRetry) foot='<button id="review">Review pages</button><button class="go" id="retry">Try again</button>';
+  else foot='<span></span><button class="go" id="finish">Close course</button>';
+  shell(html, foot);
+  var sub=document.getElementById("submit");
+  if(sub){
+    var check=function(){ sub.disabled = Object.keys(answers).length < C.quiz.length; };
+    app.querySelectorAll('input[type=radio]').forEach(function(r){ r.onchange=function(){ answers[+r.name.slice(1)]=+r.value; check(); }; });
+    check();
+    sub.onclick=function(){
+      var right=0; C.quiz.forEach(function(q,i){ if(answers[i]===q.correct) right++; });
+      var pct=Math.round(right/C.quiz.length*100);
+      result={right:right,pct:pct,passed:pct>=C.passMark};
+      reportScore(pct,result.passed);
+      showQuiz();
+    };
+    document.getElementById("back").onclick=function(){ page=C.pages.length-1; save(); showPage(); };
+  }
+  var b;
+  if(b=document.getElementById("retry")) b.onclick=startQuiz;
+  if(b=document.getElementById("review")) b.onclick=function(){ page=0; save(); showPage(); };
+  if(b=document.getElementById("finish")) b.onclick=function(){ showDone(); };
+}
+
+function showDone(){
+  onCover=false;
+  var msg = HAS_QUIZ ? (lastScore!=null && lastScore>=C.passMark ? "You passed with "+lastScore+"%." : "Your result has been recorded.") : "You have reached the end of this course.";
+  shell('<span class="tag">Complete</span><h2>'+esc(C.title)+'</h2><p>'+msg+'</p><p class="muted">Your progress has been saved'+(S.api?' to the learning platform':'')+'. You can now close this window.</p>',
+    '<button id="again">Go back through the pages</button><button class="go" id="close">Close</button>');
+  document.getElementById("again").onclick=function(){ page=0; save(); showPage(); };
+  document.getElementById("close").onclick=function(){ terminate(); try{ window.close(); }catch(e){} };
+}
+
+/* --- start --- */
+if(C.previewStart==="cover" && C.design && C.design.cover) showCover();
+else if(C.previewStart==="quiz" && HAS_QUIZ){ page=C.pages.length; startQuiz(); }
+else if(C.previewStart==="page"){ page=0; showPage(); }
+else if(C.design && C.design.cover && !visited.length && !finished) showCover();
+else if(finished && page>=C.pages.length-1 && !HAS_QUIZ) showDone();
+else if(HAS_QUIZ && page>=C.pages.length) startQuiz();
+else { if(page>=C.pages.length) page=C.pages.length-1; showPage(); }
+}).replace(/^function\s*\(\)\s*\{/,"").replace(/\}\s*$/,"");
+
+/* ---------- manifest ---------- */
+function manifest(files){
+  var id="course-"+slug(state.title)+"-"+Date.now().toString(36);
+  var t=xmlEsc(state.title);
+  var fileTags=files.map(function(f){ return '      <file href="'+xmlEsc(f)+'"/>'; }).join("\n");
+  if(state.scorm==="2004"){
+    return '<?xml version="1.0" encoding="UTF-8"?>\n'+
+'<manifest identifier="'+id+'" version="1"\n'+
+'  xmlns="http://www.imsglobal.org/xsd/imscp_v1p1"\n'+
+'  xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_v1p3"\n'+
+'  xmlns:adlseq="http://www.adlnet.org/xsd/adlseq_v1p3"\n'+
+'  xmlns:adlnav="http://www.adlnet.org/xsd/adlnav_v1p3"\n'+
+'  xmlns:imsss="http://www.imsglobal.org/xsd/imsss"\n'+
+'  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"\n'+
+'  xsi:schemaLocation="http://www.imsglobal.org/xsd/imscp_v1p1 imscp_v1p1.xsd http://www.adlnet.org/xsd/adlcp_v1p3 adlcp_v1p3.xsd http://www.adlnet.org/xsd/adlseq_v1p3 adlseq_v1p3.xsd http://www.adlnet.org/xsd/adlnav_v1p3 adlnav_v1p3.xsd http://www.imsglobal.org/xsd/imsss imsss_v1p0.xsd">\n'+
+'  <metadata>\n    <schema>ADL SCORM</schema>\n    <schemaversion>2004 4th Edition</schemaversion>\n  </metadata>\n'+
+'  <organizations default="ORG-1">\n    <organization identifier="ORG-1">\n      <title>'+t+'</title>\n'+
+'      <item identifier="ITEM-1" identifierref="RES-1">\n        <title>'+t+'</title>\n      </item>\n'+
+'    </organization>\n  </organizations>\n'+
+'  <resources>\n    <resource identifier="RES-1" type="webcontent" adlcp:scormType="sco" href="index.html">\n'+fileTags+'\n    </resource>\n  </resources>\n</manifest>\n';
+  }
+  return '<?xml version="1.0" encoding="UTF-8"?>\n'+
+'<manifest identifier="'+id+'" version="1.0"\n'+
+'  xmlns="http://www.imsproject.org/xsd/imscp_rootv1p1p2"\n'+
+'  xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_rootv1p2"\n'+
+'  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"\n'+
+'  xsi:schemaLocation="http://www.imsproject.org/xsd/imscp_rootv1p1p2 imscp_rootv1p1p2.xsd http://www.imsglobal.org/xsd/imsmd_rootv1p2p1 imsmd_rootv1p2p1.xsd http://www.adlnet.org/xsd/adlcp_rootv1p2 adlcp_rootv1p2.xsd">\n'+
+'  <metadata>\n    <schema>ADL SCORM</schema>\n    <schemaversion>1.2</schemaversion>\n  </metadata>\n'+
+'  <organizations default="ORG-1">\n    <organization identifier="ORG-1">\n      <title>'+t+'</title>\n'+
+'      <item identifier="ITEM-1" identifierref="RES-1">\n        <title>'+t+'</title>\n'+
+(state.quiz.length?'        <adlcp:masteryscore>'+state.passMark+'</adlcp:masteryscore>\n':'')+
+'      </item>\n    </organization>\n  </organizations>\n'+
+'  <resources>\n    <resource identifier="RES-1" type="webcontent" adlcp:scormtype="sco" href="index.html">\n'+fileTags+'\n    </resource>\n  </resources>\n</manifest>\n';
+}
+
+function dataUrlToBytes(u){
+  var m=u.match(/^data:([^;,]+)(?:;[^,]*)?;base64,(.*)$/);
+  if(!m){ var t=u.match(/^data:([^;,]+)[^,]*,(.*)$/); var txt=decodeURIComponent(t[2]); return {type:t[1], bytes:new TextEncoder().encode(txt)}; }
+  var bin=atob(m[2]); var a=new Uint8Array(bin.length);
+  for(var i=0;i<bin.length;i++) a[i]=bin.charCodeAt(i); return {type:m[1], bytes:a};
+}
+function buildZip(){
+  var zip=new JSZip(), imageMap={}, videoMap={}, files=["index.html"];
+  state.pages.forEach(function(p,i){
+    if(p.image){
+      var d=dataUrlToBytes(p.image); var ext=({"image/jpeg":"jpg","image/png":"png","image/webp":"webp","image/gif":"gif"})[d.type]||"img";
+      var name="media/page-"+(i+1)+"."+ext; zip.file(name,d.bytes); imageMap[i]=name; files.push(name);
+    }
+    if(p.video && p.video.kind==="file" && videoStore[p.video.key]){
+      var vn="media/page-"+(i+1)+"-video."+videoExt(p.video);
+      zip.file(vn, videoStore[p.video.key], {compression:"STORE"}); videoMap[i]=vn; files.push(vn);
+    }
+  });
+  var assetMap={}, extOf={"image/jpeg":"jpg","image/png":"png","image/webp":"webp","image/gif":"gif","image/svg+xml":"svg"};
+  [["logo","logo"],["coverImage","cover"]].forEach(function(a){
+    var u=state.design[a[0]]; if(!u) return;
+    var d=dataUrlToBytes(u), name="media/"+a[1]+"."+(extOf[d.type]||"img");
+    zip.file(name,d.bytes); assetMap[a[1]]=name; files.push(name);
+  });
+  zip.file("index.html", playerHTML(courseData(imageMap, videoMap, assetMap)));
+  zip.file("imsmanifest.xml", manifest(files));
+  return {zip:zip, files:["imsmanifest.xml"].concat(files)};
+}
+
+/* ---------- saving files ---------- */
+var dlPromise = null;
+function downloads(){ if(!dlPromise){ dlPromise = (window.claude && window.claude.use) ? window.claude.use("downloads").catch(function(){ return null; }) : Promise.resolve(null); } return dlPromise; }
+function plainDownload(filename, data){
+  var blob = data instanceof Blob ? data : new Blob([data], {type: /\.json$/.test(filename) ? "application/json" : "application/octet-stream"});
+  var url=URL.createObjectURL(blob), a=document.createElement("a");
+  a.href=url; a.download=filename; a.style.display="none"; document.body.appendChild(a); a.click();
+  setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 60000);
+  return true;
+}
+function saveFile(filename, data){
+  return downloads().then(function(dl){
+    if(!dl){
+      if(window.claude){ toast("Saving files is not available in this view. Open the page in claude.ai to download."); return false; }
+      return plainDownload(filename, data);
+    }
+    return dl.save({filename:filename, data:data}).then(function(){ return true; }, function(err){
+      var c=err && err.code;
+      if(c==="declined") toast("Download cancelled");
+      else if(c==="rate_limited") toast("A download prompt is already open");
+      else toast("The file could not be saved here ("+(c||"unknown")+").");
+      return false;
+    });
+  });
+}
+
+/* ---------- export dialog ---------- */
+function closeLayer(){ document.getElementById("layer").innerHTML=""; }
+document.getElementById("layer").addEventListener("keydown",function(e){ if(e.key==="Escape") closeLayer(); });
+
+document.getElementById("btn-export").addEventListener("click",function(){
+  var issues=problems();
+  var layer=document.getElementById("layer");
+  var built = issues.length ? null : buildZip();
+  var name = slug(state.title)+"-scorm"+(state.scorm==="2004"?"2004":"12")+".zip";
+  layer.innerHTML='<div class="overlay" role="dialog" aria-modal="true" aria-labelledby="ex-h"><div class="dialog"></div></div>';
+  var d=layer.querySelector(".dialog");
+  if(issues.length){
+    d.innerHTML='<h3 id="ex-h">Fix these first</h3><ul class="issues bad">'+issues.map(function(x){ return "<li>"+esc(x)+"</li>"; }).join("")+'</ul><div class="dialog-actions"><button class="btn primary" type="button" id="ex-close">OK</button></div>';
+  } else {
+    d.innerHTML='<h3 id="ex-h">Download for Bridge</h3>'+
+      '<div class="issues good">Ready: SCORM '+(state.scorm==="2004"?"2004 4th edition":"1.2")+' package, '+state.pages.length+' page'+(state.pages.length===1?"":"s")+(state.quiz.length?', '+state.quiz.length+'-question quiz at '+state.passMark+'%':', completes on the last page')+'.</div>'+
+      '<div class="filelist">'+esc(name)+'\n'+built.files.map(function(f){ return "  └ "+esc(f); }).join("\n")+'</div>'+
+      '<p style="margin:12px 0 4px;font-weight:600">Uploading to Bridge</p>'+
+      '<ol class="steps"><li>Go to <b>Admin → Courses</b> and choose <b>Upload course</b> (or New course → SCORM).</li><li>Select the .zip file as it is. Do not unzip it.</li><li>Check the course name, set an estimated duration (Bridge does not read it from the file), then <b>Publish</b>.</li><li>Enrol yourself first and run through it once to confirm completion is recorded.</li></ol>'+
+      '<div class="dialog-actions"><button class="btn" type="button" id="ex-close">Cancel</button><button class="btn primary" type="button" id="ex-go">Download '+esc(name)+'</button></div>';
+    d.querySelector("#ex-go").addEventListener("click",function(){
+      var btn=this; btn.disabled=true; btn.textContent="Building…";
+      // videos and images are already compressed, so store them as-is to save time
+      built.zip.generateAsync({type:"blob",compression:"DEFLATE",compressionOptions:{level:6}}, function(m){ btn.textContent="Building… "+Math.round(m.percent)+"%"; }).then(function(blob){
+        return saveFile(name, blob);
+      }).then(function(ok){ if(ok){ closeLayer(); toast("Saved "+name); } else { btn.disabled=false; btn.textContent="Download "+name; } })
+      .catch(function(){ btn.disabled=false; btn.textContent="Try again"; toast("Something went wrong building the zip."); });
+    });
+  }
+  d.querySelector("#ex-close").addEventListener("click",closeLayer);
+  var first=d.querySelector(".btn.primary"); if(first) first.focus();
+});
+
+/* ---------- preview ---------- */
+document.getElementById("btn-preview").addEventListener("click",function(){
+  var layer=document.getElementById("layer");
+  layer.innerHTML='<div class="overlay" role="dialog" aria-modal="true" aria-label="Course preview"><div class="preview">'+
+    '<div class="preview-bar"><strong>Learner preview</strong><span class="hint">No LMS connected, so nothing is recorded</span>'+
+    '<div class="seg" role="group" aria-label="Preview width"><button type="button" data-w="desktop">Desktop</button><button type="button" data-w="phone">Phone</button></div>'+
+    '<button class="btn small" type="button" id="pv-close">Close</button></div>'+
+    '<div class="frame-wrap"><iframe title="Course preview"></iframe></div></div></div>';
+  var wrap=layer.querySelector(".frame-wrap");
+  var setW=function(){ wrap.classList.toggle("phone", previewSize==="phone"); layer.querySelectorAll(".preview-bar .seg button").forEach(function(b){ b.classList.toggle("on", b.dataset.w===previewSize); }); };
+  layer.querySelectorAll(".preview-bar .seg button").forEach(function(b){ b.addEventListener("click",function(){ previewSize=b.dataset.w; setW(); }); });
+  setW();
+  layer.querySelector("iframe").srcdoc = playerHTML(courseData(null));
+  layer.querySelector("#pv-close").addEventListener("click",closeLayer);
+  layer.querySelector("#pv-close").focus();
+});
+
+/* ---------- import from Word (.docx) and PowerPoint (.pptx) ---------- */
+var IMG_TYPES = {png:"image/png",jpg:"image/jpeg",jpeg:"image/jpeg",gif:"image/gif",webp:"image/webp",bmp:"image/bmp"};
+function xml(s){ return new DOMParser().parseFromString(s||"<x/>","application/xml"); }
+function desc(node,name){ return node ? Array.prototype.slice.call(node.getElementsByTagNameNS("*",name)) : []; }
+function kids(node,name){ return node ? Array.prototype.filter.call(node.childNodes,function(c){ return c.nodeType===1 && (!name || c.localName===name); }) : []; }
+function attr(node,local){ if(!node) return null; for(var i=0;i<node.attributes.length;i++){ var a=node.attributes[i]; if(a.localName===local) return a.value; } return null; }
+function zstr(zip,path){ var f=zip.file(path); return f ? f.async("string") : Promise.resolve(""); }
+function relMap(xmlText){ var m={}; desc(xml(xmlText),"Relationship").forEach(function(r){ m[r.getAttribute("Id")]={target:r.getAttribute("Target"), type:r.getAttribute("Type")||"", external:r.getAttribute("TargetMode")==="External"}; }); return m; }
+function resolvePath(base,target){
+  if(target.charAt(0)==="/") return target.slice(1);
+  var parts=base.split("/"); parts.pop();
+  target.split("/").forEach(function(s){ if(s==="..") parts.pop(); else if(s && s!==".") parts.push(s); });
+  return parts.join("/");
+}
+function coreTitle(zip){ return zstr(zip,"docProps/core.xml").then(function(t){ var n=desc(xml(t),"title")[0]; return n ? n.textContent.trim() : ""; }); }
+function boldWrap(segs){
+  // segs: [{t, b}] -> text with **bold** marks, merging neighbours
+  var out=[], cur=null;
+  segs.forEach(function(s){ if(cur && cur.b===s.b) cur.t+=s.t; else { cur={t:s.t,b:s.b}; out.push(cur); } });
+  return out.map(function(s){
+    if(!s.b || !s.t.trim()) return s.t;
+    var m=s.t.match(/^(\s*)([\s\S]*?)(\s*)$/); return m[1]+"**"+m[2]+"**"+m[3];
+  }).join("").replace(/[ \t]+/g," ").trim();
+}
+function isOn(rPr,name){ var n=kids(rPr,name)[0]; if(!n) return false; var v=attr(n,"val"); return v===null || !/^(0|false|off|none)$/i.test(v); }
+function loadImage(zip, path){
+  var ext=(path.split(".").pop()||"").toLowerCase(), type=IMG_TYPES[ext];
+  var f=zip.file(path); if(!type || !f) return Promise.resolve(null);
+  return f.async("uint8array").then(function(u){ return {blob:new Blob([u],{type:type}), size:u.length}; });
+}
+
+function parseDocx(zip, fname, onStatus){
+  var docPath="word/document.xml";
+  if(!zip.file(docPath)) return Promise.reject(new Error("This does not look like a Word .docx file."));
+  return Promise.all([zstr(zip,docPath), zstr(zip,"word/styles.xml"), zstr(zip,"word/_rels/document.xml.rels"), coreTitle(zip)]).then(function(r){
+    var doc=xml(r[0]), rels=relMap(r[2]), styles={};
+    desc(xml(r[1]),"style").forEach(function(s){
+      var id=attr(s,"styleId"), nameEl=kids(s,"name")[0], name=nameEl?attr(nameEl,"val")||"":"";
+      var lvl=null, m=name.match(/^heading\s*(\d)$/i);
+      if(m) lvl=+m[1]; else if(/^title$/i.test(name)) lvl=0;
+      else { var ol=desc(s,"outlineLvl")[0]; if(ol && attr(ol,"val")!=null && +attr(ol,"val")<9) lvl=+attr(ol,"val")+1; }
+      styles[id]={name:name, level:lvl, list:/list/i.test(name)};
+    });
+    var blocks=[], skipped=0;
+    function para(p){
+      var pPr=kids(p,"pPr")[0], st=kids(pPr,"pStyle")[0], sid=st?attr(st,"val"):null, sinfo=styles[sid]||{};
+      var level=sinfo.level;
+      var ol=kids(pPr,"outlineLvl")[0]; if(ol && level==null && +attr(ol,"val")<9) level=+attr(ol,"val")+1;
+      if(level==null && sid){ var m=sid.match(/^heading(\d)$/i); if(m) level=+m[1]; else if(/^title$/i.test(sid)) level=0; }
+      var segs=[];
+      desc(p,"r").forEach(function(run){
+        if(run.parentNode && run.parentNode.localName==="txbxContent") return;
+        var b=isOn(kids(run,"rPr")[0],"b");
+        kids(run).forEach(function(c){
+          if(c.localName==="t") segs.push({t:c.textContent,b:b});
+          else if(c.localName==="tab") segs.push({t:" ",b:b});
+          else if(c.localName==="br" || c.localName==="cr") segs.push({t:" ",b:b});
+        });
+      });
+      var text=boldWrap(segs);
+      desc(p,"drawing").concat(desc(p,"pict")).forEach(function(dr){
+        var blip=desc(dr,"blip")[0], id=blip?attr(blip,"embed"):null;
+        if(!id){ var im=desc(dr,"imagedata")[0]; id=im?attr(im,"id"):null; }
+        var rel=id && rels[id];
+        if(rel && !rel.external){
+          var path=resolvePath(docPath, rel.target), ext=(path.split(".").pop()||"").toLowerCase();
+          var dp=desc(dr,"docPr")[0];
+          if(IMG_TYPES[ext]) blocks.push({type:"img", path:path, alt:dp?(attr(dp,"descr")||""):""}); else skipped++;
+        }
+      });
+      if(!text) return;
+      var plain=text.replace(/\*\*/g,"");
+      if(level!=null){ blocks.push({type:"h", level:level, text:plain}); return; }
+      var bullet = !!kids(pPr,"numPr")[0] || !!sinfo.list;
+      var allBold = /^\*\*[^*]+\*\*$/.test(text) && plain.length<90;
+      blocks.push({type:"p", text:text, bullet:bullet, allBold:allBold && !bullet});
+    }
+    function walk(node){
+      kids(node).forEach(function(c){
+        if(c.localName==="p") para(c);
+        else if(c.localName==="tbl"){
+          desc(c,"tr").forEach(function(tr){
+            var cells=kids(tr,"tc").map(function(tc){ return desc(tc,"t").map(function(t){ return t.textContent; }).join("").trim(); }).filter(Boolean);
+            if(cells.length) blocks.push({type:"p", text:cells.join(" · "), bullet:true});
+          });
+        }
+        else if(c.localName==="sdt" || c.localName==="sdtContent" || c.localName==="customXml") walk(c);
+      });
+    }
+    walk(desc(doc,"body")[0]);
+
+    var title=r[3];
+    var t0=blocks.filter(function(b){ return b.type==="h" && b.level===0; })[0];
+    if(t0){ title=title||t0.text; }
+    var levels=blocks.filter(function(b){ return b.type==="h" && b.level>0; }).map(function(b){ return b.level; });
+    var split = levels.length ? Math.min.apply(null,levels) : null;
+    var useBold = split==null && blocks.some(function(b){ return b.allBold; });
+    var pages=[], cur=null;
+    function start(h){ cur={heading:h, lines:[], images:[]}; pages.push(cur); }
+    function addLine(text,bullet){
+      if(!cur) start(pages.length ? "Continued" : "Introduction");
+      var prev=cur.lines[cur.lines.length-1];
+      cur.lines.push({t:(bullet?"- ":"")+text, joinPrev: !!(prev && bullet && prev.bullet), bullet:bullet});
+    }
+    blocks.forEach(function(b){
+      if(b.type==="h"){
+        if(b.level===0 && b===t0) return;
+        if(split!=null && b.level<=split) start(b.text);
+        else addLine("**"+b.text+"**", false);
+      } else if(b.type==="p"){
+        if(useBold && b.allBold) start(b.text.replace(/\*\*/g,""));
+        else addLine(b.text, b.bullet);
+      } else if(b.type==="img"){
+        if(!cur) start("Introduction");
+        cur.images.push(b);
+      }
+    });
+    if(!title) title=fname.replace(/\.[^.]+$/,"");
+    return {title:title, skippedImages:skipped, pages:pages.map(function(p){
+      var body=p.lines.reduce(function(acc,l){ return acc ? acc+(l.joinPrev?"\n":"\n\n")+l.t : l.t; },"");
+      return {heading:p.heading, body:body, imgs:p.images};
+    }).filter(function(p){ return p.heading || p.body || p.imgs.length; })};
+  });
+}
+
+function parsePptx(zip, fname, opts){
+  var presPath="ppt/presentation.xml";
+  if(!zip.file(presPath)) return Promise.reject(new Error("This does not look like a PowerPoint .pptx file."));
+  return Promise.all([zstr(zip,presPath), zstr(zip,"ppt/_rels/presentation.xml.rels"), coreTitle(zip)]).then(function(r){
+    var rels=relMap(r[1]);
+    var relId=function(n){ for(var i=0;i<n.attributes.length;i++){ var a=n.attributes[i]; if(a.localName==="id" && /relationships/.test(a.namespaceURI||"")) return a.value; } return null; };
+    var paths=desc(xml(r[0]),"sldId").map(function(s){ var rel=rels[relId(s)]; return rel ? resolvePath(presPath, rel.target) : null; }).filter(Boolean);
+    var skipped=0, hidden=0;
+    function paraText(p){
+      var segs=[];
+      kids(p).forEach(function(c){
+        if(c.localName==="r" || c.localName==="fld"){ var t=kids(c,"t")[0]; if(t) segs.push({t:t.textContent, b:attr(kids(c,"rPr")[0],"b")==="1"}); }
+        else if(c.localName==="br") segs.push({t:" ",b:false});
+      });
+      return boldWrap(segs);
+    }
+    function pos(node){ var off=desc(node,"off")[0]; return off ? {y:+attr(off,"y")||0, x:+attr(off,"x")||0} : {y:0,x:0}; }
+    function readSlide(path, idx){
+      return Promise.all([zstr(zip,path), zstr(zip, resolvePath(path,"_rels/"+path.split("/").pop()+".rels"))]).then(function(sr){
+        var sdoc=xml(sr[0]), srels=relMap(sr[1]);
+        var root=desc(sdoc,"sld")[0];
+        if(root && attr(root,"show")==="0"){ hidden++; return null; }
+        var title="", items=[], pics=[];
+        function walk(tree){
+          kids(tree).forEach(function(n){
+            var ln=n.localName;
+            if(ln==="grpSp"){ walk(n); return; }
+            if(ln==="sp"){
+              var ph=desc(n,"ph")[0], type=ph?(attr(ph,"type")||"body"):null;
+              if(type && /^(dt|ftr|sldNum|hdr)$/.test(type)) return;
+              var tx=desc(n,"txBody")[0];
+              if(tx){
+                var paras=kids(tx,"p").map(function(p){ return {text:paraText(p), lvl:+(attr(kids(p,"pPr")[0],"lvl")||0), noBu:!!desc(kids(p,"pPr")[0],"buNone")[0], bu:!!(desc(kids(p,"pPr")[0],"buChar")[0]||desc(kids(p,"pPr")[0],"buAutoNum")[0])}; }).filter(function(p){ return p.text; });
+                if(type==="title" || type==="ctrTitle"){ if(!title) title=paras.map(function(p){ return p.text.replace(/\*\*/g,""); }).join(" "); }
+                else if(paras.length) items.push({p:pos(n), kind: (type && type!=="subTitle") ? "list" : "text", paras:paras});
+              }
+              desc(n,"blip").forEach(function(b){ pics.push({id:attr(b,"embed"), alt:attr(desc(n,"cNvPr")[0],"descr")||""}); });
+            } else if(ln==="pic"){
+              var b=desc(n,"blip")[0]; if(b) pics.push({id:attr(b,"embed"), alt:attr(desc(n,"cNvPr")[0],"descr")||""});
+            } else if(ln==="graphicFrame"){
+              var rows=desc(n,"tr").map(function(tr){ return kids(tr,"tc").map(function(tc){ return desc(tc,"t").map(function(t){ return t.textContent; }).join("").trim(); }).filter(Boolean).join(" · "); }).filter(Boolean);
+              if(rows.length) items.push({p:pos(n), kind:"list", paras:rows.map(function(t){ return {text:t,lvl:0,noBu:false}; })});
+            }
+          });
+        }
+        walk(desc(sdoc,"spTree")[0]);
+        items.sort(function(a,b){ return (a.p.y-b.p.y) || (a.p.x-b.p.x); });
+        var chunks=[];
+        items.forEach(function(it){
+          if(it.kind==="list"){
+            var lines=it.paras.map(function(p){ return (p.noBu && !p.bu) ? p.text : "- "+p.text; });
+            // a single unbulleted line reads better as a sentence
+            if(lines.length===1 && !it.paras[0].bu) lines=[it.paras[0].text];
+            var buf=[], grp=[];
+            lines.forEach(function(l){ if(/^- /.test(l)) grp.push(l); else { if(grp.length){ buf.push(grp.join("\n")); grp=[]; } buf.push(l); } });
+            if(grp.length) buf.push(grp.join("\n"));
+            chunks.push(buf.join("\n\n"));
+          } else chunks.push(it.paras.map(function(p){ return p.text; }).join("\n\n"));
+        });
+        var picPaths=[];
+        pics.forEach(function(pc){
+          var rel=pc.id && srels[pc.id]; if(!rel || rel.external) return;
+          var pth=resolvePath(path, rel.target), ext=(pth.split(".").pop()||"").toLowerCase();
+          if(IMG_TYPES[ext]) picPaths.push({path:pth, alt:pc.alt}); else skipped++;
+        });
+        var notesRel=Object.keys(srels).map(function(k){ return srels[k]; }).filter(function(x){ return /notesSlide$/.test(x.type); })[0];
+        var notesP = (opts.notes && notesRel) ? zstr(zip, resolvePath(path, notesRel.target)) : Promise.resolve("");
+        return notesP.then(function(nx){
+          if(nx){
+            var nd=xml(nx), notes=[];
+            desc(nd,"sp").forEach(function(sp){ var ph=desc(sp,"ph")[0]; if(ph && attr(ph,"type")==="body"){ desc(sp,"p").forEach(function(p){ var t=paraText(p); if(t) notes.push(t); }); } });
+            if(notes.length) chunks.push(notes.join("\n\n"));
+          }
+          // keep the biggest picture: usually the main visual rather than a logo
+          return Promise.all(picPaths.map(function(pp){ var f=zip.file(pp.path); return f ? f.async("uint8array").then(function(u){ return {path:pp.path, alt:pp.alt, size:u.length}; }) : null; })).then(function(sizes){
+            sizes=sizes.filter(Boolean).sort(function(a,b){ return b.size-a.size; });
+            return {heading: title || "Slide "+(idx+1), body: chunks.filter(Boolean).join("\n\n"), imgs: sizes.length ? [sizes[0]] : []};
+          });
+        });
+      });
+    }
+    return paths.reduce(function(pr,pth,i){ return pr.then(function(acc){ return readSlide(pth,i).then(function(s){ if(s) acc.push(s); return acc; }); }); }, Promise.resolve([])).then(function(pages){
+      var title=r[2] || (pages[0] && !/^Slide \d+$/.test(pages[0].heading) ? pages[0].heading : "") || fname.replace(/\.[^.]+$/,"");
+      return {title:title, pages:pages, skippedImages:skipped, hiddenSlides:hidden};
+    });
+  });
+}
+
+/* --- PDF (read with pdf.js, loaded only when a PDF is chosen) --- */
+var PDFJS_BASE="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/", pdfjsReady=null;
+function loadScript(src){ return new Promise(function(res,rej){ var s=document.createElement("script"); s.src=src; s.onload=res; s.onerror=rej; document.head.appendChild(s); }); }
+function getPdfjs(){
+  if(window.pdfjsLib && window.pdfjsWorker) return Promise.resolve(window.pdfjsLib);
+  if(!pdfjsReady){
+    // the worker code runs on the page itself, because the viewer does not allow separate worker files
+    pdfjsReady = loadScript(PDFJS_BASE+"pdf.min.js").then(function(){ return loadScript(PDFJS_BASE+"pdf.worker.min.js"); }).then(function(){
+      if(!window.pdfjsLib) throw 0;
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_BASE+"pdf.worker.min.js";
+      return window.pdfjsLib;
+    }).catch(function(){ pdfjsReady=null; throw new Error("The PDF reader could not be loaded. Check your internet connection and try again."); });
+  }
+  return pdfjsReady;
+}
+var BULLET_RE=/^\s*[•●○◦▪■□➢►▶✓✔•▪●\-–]\s*/;
+function pdfLines(items){
+  var its=items.filter(function(i){ return typeof i.str==="string" && i.str.length; }).map(function(i){
+    var t=i.transform; return {s:i.str, x:t[4], y:t[5], size:Math.abs(t[3])||Math.hypot(t[2],t[3])||i.height||10, w:i.width||0};
+  });
+  its.sort(function(a,b){ return (b.y-a.y) || (a.x-b.x); });
+  var lines=[], cur=null;
+  its.forEach(function(it){
+    if(cur && Math.abs(cur.y-it.y) < Math.max(2, Math.min(cur.size||it.size, it.size)*0.45)) cur.items.push(it);
+    else { cur={y:it.y, size:0, items:[it]}; lines.push(cur); }
+    if(it.s.trim()) cur.size=Math.max(cur.size, it.size);
+  });
+  return lines.map(function(l){
+    l.items.sort(function(a,b){ return a.x-b.x; });
+    var text="", end=null;
+    l.items.forEach(function(it){
+      if(end!=null && it.x-end > it.size*0.15 && !/\s$/.test(text) && !/^\s/.test(it.s)) text+=" ";
+      text+=it.s; end=it.x+it.w;
+    });
+    return {y:l.y, size:l.size||10, text:text.replace(/\s+/g," ").trim()};
+  }).filter(function(l){ return l.text; });
+}
+function median(a){ if(!a.length) return 10; a=a.slice().sort(function(x,y){ return x-y; }); return a[Math.floor((a.length-1)/2)]; }
+function pdfPageContent(lines){
+  // returns {heading, paras:[{t,bullet}]}
+  var sizes=[]; lines.forEach(function(l){ for(var i=0;i<Math.min(l.text.length,400);i+=10) sizes.push(l.size); });
+  var body=median(sizes), heading="", used={};
+  var cands=lines.filter(function(l){ return l.text.length>=2 && l.text.length<=120 && !BULLET_RE.test(l.text); });
+  var max=cands.reduce(function(m,l){ return Math.max(m,l.size); },0);
+  if(cands.length && max>=body*1.18){
+    var first=lines.indexOf(cands.filter(function(l){ return l.size===max; })[0]);
+    var parts=[lines[first].text]; used[first]=1;
+    if(lines[first+1] && Math.abs(lines[first+1].size-max)<0.6 && parts[0].length+lines[first+1].text.length<140){ parts.push(lines[first+1].text); used[first+1]=1; }
+    heading=parts.join(" ");
+  }
+  var paras=[], prev=null;
+  lines.forEach(function(l,i){
+    if(used[i]) { prev=null; return; }
+    var isBullet=BULLET_RE.test(l.text), t=isBullet ? l.text.replace(BULLET_RE,"") : l.text;
+    if(!t) return;
+    var big = l.size>=body*1.18 && t.length<=120;
+    var gap = prev ? prev.y-l.y : 0, lh=(prev?prev.size:l.size)*1.25;
+    var newPara = !prev || isBullet || big || prev.big || gap>lh*1.4 || Math.abs(prev.size-l.size)>1.2;
+    if(newPara) paras.push({t:big?"**"+t+"**":t, bullet:isBullet});
+    else { var last=paras[paras.length-1]; last.t = /-$/.test(last.t) ? last.t.slice(0,-1)+t : last.t+" "+t; }
+    prev={y:l.y,size:l.size,big:big};
+  });
+  return {heading:heading, paras:paras};
+}
+function parasToBody(paras){
+  return paras.reduce(function(acc,p,i){
+    var line=(p.bullet?"- ":"")+p.t; if(!acc) return line;
+    return acc+((p.bullet && paras[i-1].bullet)?"\n":"\n\n")+line;
+  },"");
+}
+function parsePdf(file, opts, onStatus){
+  return getPdfjs().then(function(lib){
+    return file.arrayBuffer().then(function(buf){
+      return lib.getDocument({data:new Uint8Array(buf), isEvalSupported:false, useSystemFonts:true}).promise;
+    }).catch(function(e){
+      if(e && e.name==="PasswordException") throw new Error("That PDF is password protected. Remove the password and try again.");
+      throw new Error(e && e.message && /PDF reader/.test(e.message) ? e.message : "That PDF could not be opened. It may be damaged.");
+    });
+  }).then(function(pdf){
+    var n=pdf.numPages, raw=[];
+    var seq=Promise.resolve();
+    for(var i=1;i<=n;i++){ (function(i){ seq=seq.then(function(){
+      if(onStatus) onStatus("Reading page "+i+" of "+n+"…");
+      return pdf.getPage(i).then(function(pg){
+        var vp=pg.getViewport({scale:1});
+        return pg.getTextContent().then(function(tc){ raw.push({n:i, landscape:vp.width>vp.height*1.05, lines:pdfLines(tc.items)}); });
+      });
+    }); })(i); }
+    return seq.then(function(){
+      // strip repeated headers/footers and bare page numbers
+      var key=function(t){ return t.toLowerCase().replace(/\d+/g,"#"); }, counts={};
+      raw.forEach(function(p){ var seen={}; p.lines.slice(0,2).concat(p.lines.slice(-2)).forEach(function(l){ var k=key(l.text); if(!seen[k]){ seen[k]=1; counts[k]=(counts[k]||0)+1; } }); });
+      var limit=Math.max(3, Math.ceil(raw.length*0.5));
+      raw.forEach(function(p){
+        var edge=p.lines.slice(0,2).concat(p.lines.slice(-2));
+        p.lines=p.lines.filter(function(l){
+          if(/^(page\s*)?\d+(\s*(of|\/)\s*\d+)?$/i.test(l.text)) return false;
+          return !(edge.indexOf(l)>=0 && raw.length>=3 && counts[key(l.text)]>=limit);
+        });
+      });
+      var pages=[], textChars=0;
+      raw.forEach(function(p){
+        var c=pdfPageContent(p.lines), body=parasToBody(c.paras), plain=(c.heading+" "+body).replace(/\*\*/g,"").trim();
+        textChars+=plain.length;
+        var asPicture = opts.pdfMode==="picture" || (opts.pdfMode==="auto" && (p.landscape || plain.length<20));
+        if(asPicture){
+          pages.push({heading:c.heading||"Page "+p.n, body:"", imgs:[{pdfPage:p.n, alt:plain.replace(/\s+/g," ").slice(0,300)}]});
+        } else {
+          var prev=pages[pages.length-1];
+          if(!c.heading && prev && !prev.imgs.length && body){
+            // no heading on this page: carry on the previous page, rejoining a sentence split by the page break
+            var firstPlain=c.paras[0] && !c.paras[0].bullet && !/^\*\*/.test(c.paras[0].t);
+            prev.body += (firstPlain && prev.body && !/[.!?:;"”)]$/.test(prev.body) ? " " : "\n\n") + body;
+          } else if(body || c.heading){
+            pages.push({heading:c.heading||"Page "+p.n, body:body, imgs:[]});
+          }
+        }
+      });
+      return {title:"", pages:pages, pdf:pdf, scanned: textChars<20*raw.length && opts.pdfMode==="text", pageCount:n};
+    });
+  });
+}
+function renderPdfPage(pdf, n){
+  return pdf.getPage(n).then(function(pg){
+    var v1=pg.getViewport({scale:1}), v=pg.getViewport({scale:Math.min(2.5, 1600/v1.width)});
+    var c=document.createElement("canvas"); c.width=Math.floor(v.width); c.height=Math.floor(v.height);
+    var ctx=c.getContext("2d"); ctx.fillStyle="#fff"; ctx.fillRect(0,0,c.width,c.height);
+    return pg.render({canvasContext:ctx, viewport:v}).promise.then(function(){ var u=c.toDataURL("image/jpeg",0.82); c.width=c.height=0; return u; });
+  });
+}
+
+function readOffice(file, opts, onStatus){
+  var name=file.name||"", low=name.toLowerCase();
+  if(/\.(doc|ppt)$/.test(low)) return Promise.reject(new Error("This is an older ."+low.split(".").pop()+" file. Open it in Word or PowerPoint and use Save As → ."+low.split(".").pop()+"x, then import that."));
+  if(/\.pdf$/.test(low)){
+    return parsePdf(file, opts, onStatus).then(function(res){
+      res.kind="pdf"; res.skippedImages=0;
+      res.loadImg=function(img){ return renderPdfPage(res.pdf, img.pdfPage); };
+      var fallback=name.replace(/\.[^.]+$/,"").replace(/[_-]+/g," ");
+      return res.pdf.getMetadata().then(function(m){ var t=m && m.info && m.info.Title; res.title=(t && String(t).trim()) || fallback; return res; }, function(){ res.title=fallback; return res; });
+    });
+  }
+  if(!/\.(docx|pptx|docm|pptm)$/.test(low)) return Promise.reject(new Error("Choose a Word (.docx), PowerPoint (.pptx) or PDF file."));
+  return JSZip.loadAsync(file).catch(function(){ throw new Error("That file could not be opened. It may be damaged or password protected."); }).then(function(zip){
+    return (/\.ppt[xm]$/.test(low) ? parsePptx(zip,name,opts) : parseDocx(zip,name)).then(function(res){
+      res.zip=zip; res.kind=/\.ppt[xm]$/.test(low)?"pptx":"docx";
+      res.loadImg=function(img){ return loadImage(zip, img.path).then(function(li){ return li ? shrinkImage(li.blob) : null; }); };
+      return res;
+    });
+  });
+}
+
+document.getElementById("btn-import").addEventListener("click",function(){
+  var layer=document.getElementById("layer"), parsed=null, chosen=null;
+  layer.innerHTML='<div class="overlay" role="dialog" aria-modal="true" aria-labelledby="im-h"><div class="dialog">'+
+    '<h3 id="im-h">Import Word, PowerPoint or PDF</h3>'+
+    '<p class="hint" style="margin:0">PowerPoint: each slide becomes a page, with its title, text and main picture. Word: each top-level heading (Heading 1) starts a new page. PDF: see the option below. Everything is read here in your browser.</p>'+
+    '<div class="opts-grid">'+
+      '<label class="check"><input type="radio" name="im-mode" value="replace" checked><span><b>Start a new course</b> from this file (replaces the current pages and quiz)</span></label>'+
+      '<label class="check"><input type="radio" name="im-mode" value="append"><span><b>Add the pages</b> to the end of the current course</span></label>'+
+      '<label class="check"><input type="checkbox" id="im-notes"><span><b>Include speaker notes</b> in the page text (PowerPoint)</span></label>'+
+      '<label class="f"><span>PDF pages</span><select id="im-pdfmode">'+
+        '<option value="auto">Automatic: landscape pages (slides) as pictures, portrait pages as text</option>'+
+        '<option value="picture">Every page as a picture: keeps the exact look</option>'+
+        '<option value="text">Text only: editable and easy to read on phones</option>'+
+      '</select></label>'+
+    '</div>'+
+    '<label class="btn" style="justify-self:start">Choose a file…<input type="file" id="im-file" hidden accept=".docx,.pptx,.docm,.pptm,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation"></label>'+
+    '<div class="status" id="im-status" role="status" style="margin-top:12px"></div>'+
+    '<div id="im-result"></div>'+
+    '<div class="dialog-actions"><button class="btn" type="button" id="im-cancel">Cancel</button><button class="btn primary" type="button" id="im-go" disabled>Import pages</button></div>'+
+  '</div></div>';
+  var d=layer.querySelector(".dialog"), status=d.querySelector("#im-status"), out=d.querySelector("#im-result"), go=d.querySelector("#im-go");
+  d.querySelector("#im-cancel").addEventListener("click",closeLayer);
+  function read(){
+    if(!chosen) return;
+    parsed=null; go.disabled=true; out.innerHTML=""; status.textContent="Reading "+chosen.name+"…";
+    var me=chosen;
+    readOffice(chosen,{notes:d.querySelector("#im-notes").checked, pdfMode:d.querySelector("#im-pdfmode").value}, function(msg){ if(me===chosen) status.textContent=msg; }).then(function(res){
+      if(me!==chosen) return;
+      parsed=res;
+      if(!res.pages.length){ status.textContent = res.kind==="pdf" ? "No text was found in that PDF. It may be scanned. Choose \"Every page as a picture\" instead." : "No text or pictures were found in that file."; return; }
+      var imgs=res.pages.reduce(function(n,p){ return n+p.imgs.length; },0);
+      var bits=[res.pages.length+" page"+(res.pages.length===1?"":"s"), imgs+" picture"+(imgs===1?"":"s")];
+      status.innerHTML="Found <b>"+bits.join("</b> and <b>")+"</b> in "+esc(chosen.name)+".";
+      var notes=[];
+      if(res.skippedImages) notes.push(res.skippedImages+" picture"+(res.skippedImages===1?" is":"s are")+" in a format browsers cannot show (such as EMF or TIFF) and will be left out.");
+      if(res.hiddenSlides) notes.push(res.hiddenSlides+" hidden slide"+(res.hiddenSlides===1?" was":"s were")+" skipped.");
+      if(res.kind==="pdf" && res.scanned) notes.push("Very little text was found. If this PDF is a scan, choose \"Every page as a picture\" instead.");
+      if(res.kind==="pdf" && res.pages.some(function(p){ return !p.imgs.length; })) notes.push("PDF text comes across without its original layout. Check headings and paragraphs on each page after importing.");
+      if(res.kind==="docx" && res.pages.length===1) notes.push("No headings were found, so everything went onto one page. Use Heading 1 styles in Word to split it into pages, or split it here after importing.");
+      out.innerHTML='<ol class="imp-list">'+res.pages.map(function(p,i){
+        var words=(p.body.match(/\S+/g)||[]).length;
+        return '<li><span class="n">'+String(i+1).padStart(2,"0")+'</span><span class="t">'+esc(p.heading)+'</span><span class="m">'+words+'w'+(p.imgs.length?' · img':'')+'</span></li>';
+      }).join("")+'</ol>'+(notes.length?'<div class="issues">'+notes.map(esc).join("<br>")+'</div>':'');
+      go.disabled=false; go.textContent="Import "+res.pages.length+" page"+(res.pages.length===1?"":"s");
+    }).catch(function(err){ status.textContent=err && err.message ? err.message : "That file could not be read."; });
+  }
+  d.querySelector("#im-file").addEventListener("change",function(e){ chosen=e.target.files[0]||null; e.target.value=""; read(); });
+  d.querySelector("#im-notes").addEventListener("change",function(){ if(chosen && /\.ppt[xm]$/i.test(chosen.name)) read(); });
+  d.querySelector("#im-pdfmode").addEventListener("change",function(){ if(chosen && /\.pdf$/i.test(chosen.name)) read(); });
+  go.addEventListener("click",function(){
+    if(!parsed) return;
+    go.disabled=true;
+    var mode=d.querySelector('input[name="im-mode"]:checked').value;
+    var total=parsed.pages.reduce(function(n,p){ return n+p.imgs.length; },0), done=0;
+    var jobs=parsed.pages.reduce(function(pr,p){
+      return pr.then(function(acc){
+        var img=p.imgs[0];
+        var page={id:uid("p"), heading:p.heading, body:p.body, image:null, imageAlt:img?img.alt:"", keyPoint:"", video:null};
+        if(!img){ acc.push(page); return acc; }
+        status.textContent="Preparing pictures "+(++done)+" of "+total+"…";
+        return parsed.loadImg(img)
+          .then(function(url){ page.image=url; acc.push(page); return acc; }, function(){ acc.push(page); return acc; });
+      });
+    }, Promise.resolve([]));
+    jobs.then(function(pages){
+      if(mode==="replace"){
+        var oldKeys=state.pages.map(function(p){ return p.video && p.video.kind==="file" ? p.video.key : null; }).filter(Boolean);
+        state.pages=pages; state.quiz=[]; state.title=parsed.title||state.title; state.example=false;
+        oldKeys.forEach(forgetVideo);
+        sel={type:"page", idx:0};
+      } else {
+        var at=state.pages.length; state.pages=state.pages.concat(pages); sel={type:"page", idx:at};
+      }
+      touched(); closeLayer(); render();
+      toast("Imported "+pages.length+" page"+(pages.length===1?"":"s")+". Check each one, then add your quiz.");
+    });
+  });
+});
+
+/* ---------- project save / open ---------- */
+document.getElementById("btn-save").addEventListener("click",function(){
+  var btn=this;
+  var data=JSON.parse(JSON.stringify(state)); delete data.example; data.app="scorm-studio"; data.saved=new Date().toISOString();
+  var z=new JSZip(); z.file("project.json", JSON.stringify(data,null,2));
+  state.pages.forEach(function(p){ if(p.video && p.video.kind==="file" && videoStore[p.video.key]) z.file("videos/"+p.video.key, videoStore[p.video.key], {compression:"STORE"}); });
+  btn.disabled=true;
+  z.generateAsync({type:"blob",compression:"DEFLATE"}).then(function(blob){
+    return saveFile(slug(state.title)+".scorm-project.zip", blob);
+  }).then(function(ok){ if(ok) toast("Project saved. Open it here later to keep editing."); })
+  .catch(function(){ toast("The project could not be packed."); })
+  .then(function(){ btn.disabled=false; });
+});
+document.getElementById("btn-open").addEventListener("click",function(){ document.getElementById("file-open").click(); });
+function applyProject(d, blobs, fname){
+  if(!d || !Array.isArray(d.pages) || !Array.isArray(d.quiz)) throw new Error("bad");
+  delete d.app; delete d.saved;
+  d.pages.forEach(function(p){
+    p.id=p.id||uid("p"); p.body=p.body||""; p.heading=p.heading||""; p.video=p.video||null;
+    if(p.video && p.video.kind==="file" && blobs[p.video.key]){
+      var b=blobs[p.video.key]; videoStore[p.video.key]=b; idb.put(p.video.key,b);
+    }
+  });
+  d.quiz.forEach(function(q){ q.id=q.id||uid("q"); q.options=q.options||["",""]; q.correct=q.correct||0; });
+  state=ensureDesign(Object.assign(exampleCourse(), d)); state.example=false; persist(); sel={type:"settings",idx:0}; render(); restoreVideos(); toast("Opened "+fname);
+}
+document.getElementById("file-open").addEventListener("change",function(e){
+  var f=e.target.files[0]; if(!f) return; e.target.value="";
+  var fail=function(){ toast("That file is not a SCORM Studio project."); };
+  if(/\.zip$/i.test(f.name)){
+    JSZip.loadAsync(f).then(function(z){
+      var pj=z.file("project.json"); if(!pj) throw new Error("no project");
+      return pj.async("string").then(function(txt){
+        var d=JSON.parse(txt), blobs={}, jobs=[];
+        (d.pages||[]).forEach(function(p){
+          if(p.video && p.video.kind==="file"){ var vf=z.file("videos/"+p.video.key);
+            if(vf) jobs.push(vf.async("blob").then(function(b){ blobs[p.video.key]=new Blob([b],{type:p.video.type||"video/mp4"}); })); }
+        });
+        return Promise.all(jobs).then(function(){ applyProject(d, blobs, f.name); });
+      });
+    }).catch(fail);
+  } else {
+    var r=new FileReader();
+    r.onload=function(){ try{ applyProject(JSON.parse(r.result), {}, f.name); }catch(err){ fail(); } };
+    r.readAsText(f);
+  }
+});
+
+render();
+restoreVideos();
+})();
+</script>

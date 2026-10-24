@@ -1,0 +1,21 @@
+{
+  "name": "scorm-studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Browser-based SCORM course builder for Bridge, with an optional quiz-writing server for TrueNAS",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "serve": "node scripts/build.mjs && node scripts/dev-server.mjs",
+    "test": "node scripts/build.mjs && node --test tests/player.test.mjs tests/server.test.mjs tests/e2e.test.mjs",
+    "test:quick": "node scripts/build.mjs && node --test tests/player.test.mjs tests/server.test.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "jsdom": "24.1.3",
+    "jszip": "3.10.1",
+    "playwright": "1.56.0"
+  }
+}

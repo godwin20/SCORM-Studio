@@ -1,0 +1,43 @@
+# SCORM Studio for TrueNAS (Apps > Discover Apps > ⋮ > Install via YAML)
+#
+# Before pasting, change the 4 lines marked  <-- CHANGE
+# Full steps are in SETUP.md.
+
+services:
+  scorm-studio:
+    image: node:22-alpine
+    restart: unless-stopped
+    user: "568:568"                 # TrueNAS "apps" user
+    working_dir: /app
+    command: ["node", "server.js"]
+    environment:
+      ANTHROPIC_API_KEY: "sk-ant-your-key-here"        # <-- CHANGE: your Claude API key
+      ACCESS_CODE: "change-me-to-something-long"       # <-- CHANGE: code colleagues type in (8+ characters)
+      MODEL: "claude-sonnet-5-5"
+      PORT: "8787"
+      LIMIT_PER_HOUR: "20"          # quiz requests per person per hour
+      LIMIT_PER_DAY: "100"          # quiz requests in total per day
+      MAX_QUESTIONS: "15"
+      TZ: "Europe/London"
+    ports:
+      - "8787:8787"                 # <-- CHANGE the first number if 8787 is already used on your TrueNAS
+    volumes:
+      - /mnt/YOUR-POOL/apps/scorm-studio:/app:ro       # <-- CHANGE: the dataset holding server.js and scorm-studio.html
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8787/ping"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"

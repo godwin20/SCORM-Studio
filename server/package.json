@@ -1,0 +1,5 @@
+{
+  "type": "commonjs",
+  "private": true,
+  "description": "server.js is plain CommonJS so it runs unchanged on TrueNAS with no package.json next to it"
+}
