@@ -313,6 +313,10 @@ function ensureDesign(s){
   if(!FONTS[cur.bodyFont]) cur.bodyFont="system";
   s.design=cur; s.accent=cur.accent;
   (s.pages||[]).forEach(function(p){ if(!p.imagePos) p.imagePos="above"; if(!p.callout) p.callout="brand"; });
+  if(s.showBadge===undefined) s.showBadge=true;
+  function ensureQType(q){ if(!q.type) q.type="mc"; }
+  (s.quiz||[]).forEach(ensureQType);
+  (s.pages||[]).forEach(function(p){ if(p.check) (p.check.questions||[]).forEach(ensureQType); });
   return s;
 }
 function hexToRgb(h){ var m=String(h||"").replace("#","").match(/^([0-9a-f]{6})$/i); if(!m) return [0,0,0]; var n=parseInt(m[1],16); return [n>>16&255,n>>8&255,n&255]; }
@@ -448,12 +452,13 @@ function renderSettings(ed){
     '<label class="check"><input type="checkbox" id="s-show"><span><b>Show correct answers</b> after the quiz is submitted<br><span class="hint">Includes your feedback text for each question</span></span></label>'+
     '<label class="check"><input type="checkbox" id="s-retry"><span><b>Allow retries</b> if the learner fails</span></label>'+
     '<label class="check"><input type="checkbox" id="s-shuffle"><span><b>Shuffle</b> questions and answers for each attempt</span></label>'+
+    '<label class="check"><input type="checkbox" id="s-badge"><span><b>Show a completion badge</b> on the finish screen</span></label>'+
     '<div style="display:flex;justify-content:flex-end"><button class="btn small danger" type="button" id="s-new">Start a blank course</button></div>'+
   '</div>';
   var bind=function(id,key,fn){ var i=ed.querySelector("#"+id); if(i.type==="checkbox"){ i.checked=!!state[key]; i.addEventListener("change",function(){ state[key]=i.checked; touched(); }); } else { i.value=state[key]; i.addEventListener("input",function(){ state[key]= fn?fn(i.value):i.value; touched(); }); } };
   bind("s-title","title"); bind("s-desc","description"); bind("s-author","author");
   bind("s-pass","passMark",function(v){ v=Math.round(+v); return isNaN(v)?80:Math.max(0,Math.min(100,v)); });
-  bind("s-show","showAnswers"); bind("s-retry","allowRetry"); bind("s-shuffle","shuffle");
+  bind("s-show","showAnswers"); bind("s-retry","allowRetry"); bind("s-shuffle","shuffle"); bind("s-badge","showBadge");
   ed.querySelectorAll(".seg button").forEach(function(b){
     b.classList.toggle("on", b.dataset.v===state.scorm);
     b.addEventListener("click",function(){ state.scorm=b.dataset.v; touched(); ed.querySelectorAll(".seg button").forEach(function(x){ x.classList.toggle("on", x.dataset.v===state.scorm); }); });
@@ -1083,20 +1088,13 @@ function renderGenerator(slot, ed){
   paint();
 }
 
-function questionCard(q,qi,list,redraw){
-  list = list || state.quiz; redraw = redraw || render;
-  var c=el('<div class="q"></div>');
-  c.innerHTML=
-   '<div class="q-top"><span class="eyebrow">Question '+(qi+1)+'</span>'+
-   '<button class="btn small" type="button" data-a="up" aria-label="Move up">↑</button><button class="btn small" type="button" data-a="down" aria-label="Move down">↓</button>'+
-   '<button class="btn small danger" type="button" data-a="del">Delete</button></div>'+
-   '<label class="f"><span>Question</span><textarea class="short" id="qq-'+q.id+'"></textarea></label>'+
-   '<div class="f" style="display:grid;gap:8px"><span style="font-weight:600;font-size:13.5px">Answers</span><div class="opts" style="display:grid;gap:8px"></div>'+
-   '<button class="btn small" type="button" data-a="addopt" style="justify-self:start">+ Add answer</button></div>'+
-   '<label class="f"><span>Feedback <span class="hint">optional · shown with the results</span></span><input type="text" id="qf-'+q.id+'"></label>';
-  var qt=c.querySelector("textarea"); qt.value=q.q; qt.addEventListener("input",function(){ q.q=qt.value; touched(); });
-  var fb=c.querySelector("#qf-"+q.id); fb.value=q.feedback||""; fb.addEventListener("input",function(){ q.feedback=fb.value; touched(); });
-  var opts=c.querySelector(".opts");
+function mcEditor(q){
+  if(!q.options || !q.options.length) q.options=["",""];
+  if(q.correct==null) q.correct=0;
+  var box=el('<div class="f" style="display:grid;gap:8px"><span style="font-weight:600;font-size:13.5px">Answers</span><div class="opts" style="display:grid;gap:8px"></div>'+
+   '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn small" type="button" data-a="addopt">+ Add answer</button>'+
+   '<button class="btn small ghost" type="button" data-a="tf">Quick: True / false</button></div></div>');
+  var opts=box.querySelector(".opts");
   function drawOpts(){
     opts.innerHTML="";
     q.options.forEach(function(o,oi){
@@ -1109,13 +1107,99 @@ function questionCard(q,qi,list,redraw){
       x.addEventListener("click",function(){ q.options.splice(oi,1); if(q.correct>=q.options.length) q.correct=q.options.length-1; else if(q.correct>oi) q.correct--; touched(); drawOpts(); });
       opts.appendChild(r);
     });
-    c.querySelector('[data-a="addopt"]').disabled = q.options.length>=6;
+    box.querySelector('[data-a="addopt"]').disabled = q.options.length>=6;
   }
   drawOpts();
+  box.addEventListener("click",function(e){
+    var a=e.target.closest("[data-a]"); if(!a) return;
+    if(a.dataset.a==="addopt"){ q.options.push(""); touched(); drawOpts(); }
+    else if(a.dataset.a==="tf"){ q.options=["True","False"]; q.correct=0; touched(); drawOpts(); }
+  });
+  return box;
+}
+function ensureMatchShape(q){ if(!q.pairs || q.pairs.length<2) q.pairs=[{left:"",right:""},{left:"",right:""}]; }
+function matchEditor(q){
+  ensureMatchShape(q);
+  var box=el('<div class="f" style="display:grid;gap:8px"><span style="font-weight:600;font-size:13.5px">Pairs <span class="hint">learners match each left item to its right item</span></span><div class="opts" style="display:grid;gap:8px"></div><button class="btn small" type="button" data-a="addpair">+ Add pair</button></div>');
+  var list=box.querySelector(".opts");
+  function draw(){
+    list.innerHTML="";
+    q.pairs.forEach(function(pr,pi){
+      var r=el('<div class="opt" style="grid-template-columns:1fr 1fr auto"><input type="text" placeholder="Left '+(pi+1)+'"><input type="text" placeholder="Matches with…"><button class="btn small ghost" type="button" aria-label="Remove pair">✕</button></div>');
+      var l=r.children[0], rt=r.children[1], x=r.children[2];
+      l.value=pr.left; rt.value=pr.right;
+      l.addEventListener("input",function(){ pr.left=l.value; touched(); });
+      rt.addEventListener("input",function(){ pr.right=rt.value; touched(); });
+      x.disabled=q.pairs.length<=2;
+      x.addEventListener("click",function(){ q.pairs.splice(pi,1); touched(); draw(); });
+      list.appendChild(r);
+    });
+    box.querySelector('[data-a="addpair"]').disabled=q.pairs.length>=8;
+  }
+  draw();
+  box.addEventListener("click",function(e){ if(e.target.closest('[data-a="addpair"]')){ q.pairs.push({left:"",right:""}); touched(); draw(); } });
+  return box;
+}
+function fillBlankCount(text){ var m=String(text||"").match(/_{3,}/g); return m?m.length:0; }
+function ensureFillShape(q){ if(q.text==null) q.text=""; if(!q.answers) q.answers=[]; }
+function fillEditor(q){
+  ensureFillShape(q);
+  var box=el('<div class="f" style="display:grid;gap:8px">'+
+    '<span style="font-weight:600;font-size:13.5px">Text with blanks <span class="hint">mark each blank with three or more underscores, like ___</span></span>'+
+    '<textarea class="short" id="qft-'+q.id+'"></textarea>'+
+    '<div id="qfa-'+q.id+'" style="display:grid;gap:8px"></div></div>');
+  var ta=box.querySelector("textarea"); ta.value=q.text;
+  var ansBox=box.querySelector("#qfa-"+q.id);
+  function drawAnswers(){
+    var n=fillBlankCount(q.text);
+    while(q.answers.length<n) q.answers.push("");
+    q.answers.length=n;
+    ansBox.innerHTML="";
+    for(var i=0;i<n;i++){
+      (function(i){
+        var row=el('<label class="f"><span>Accepted answer for blank '+(i+1)+'</span><input type="text"></label>');
+        var inp=row.querySelector("input"); inp.value=q.answers[i]||"";
+        inp.addEventListener("input",function(){ q.answers[i]=inp.value; touched(); });
+        ansBox.appendChild(row);
+      })(i);
+    }
+    if(!n) ansBox.appendChild(el('<div class="hint">Add ___ to the text above to create a blank.</div>'));
+  }
+  ta.addEventListener("input",function(){ q.text=ta.value; touched(); drawAnswers(); });
+  drawAnswers();
+  return box;
+}
+function questionCard(q,qi,list,redraw){
+  list = list || state.quiz; redraw = redraw || render;
+  if(!q.type) q.type="mc";
+  var c=el('<div class="q"></div>');
+  c.innerHTML=
+   '<div class="q-top"><span class="eyebrow">Question '+(qi+1)+'</span>'+
+   '<select class="btn small" id="qty-'+q.id+'" aria-label="Question type">'+
+     '<option value="mc">Multiple choice</option>'+
+     '<option value="match">Matching</option>'+
+     '<option value="fill">Fill in the blank</option>'+
+   '</select>'+
+   '<button class="btn small" type="button" data-a="up" aria-label="Move up">↑</button><button class="btn small" type="button" data-a="down" aria-label="Move down">↓</button>'+
+   '<button class="btn small danger" type="button" data-a="del">Delete</button></div>'+
+   '<label class="f"><span>Question</span><textarea class="short" id="qq-'+q.id+'"></textarea></label>'+
+   '<div id="qbody-'+q.id+'"></div>'+
+   '<label class="f"><span>Feedback <span class="hint">optional · shown with the results</span></span><input type="text" id="qf-'+q.id+'"></label>';
+  var qt=c.querySelector("textarea"); qt.value=q.q; qt.addEventListener("input",function(){ q.q=qt.value; touched(); });
+  var fb=c.querySelector("#qf-"+q.id); fb.value=q.feedback||""; fb.addEventListener("input",function(){ q.feedback=fb.value; touched(); });
+  var tySel=c.querySelector("#qty-"+q.id); tySel.value=q.type;
+  var bodyBox=c.querySelector("#qbody-"+q.id);
+  function drawBody(){
+    bodyBox.innerHTML="";
+    if(q.type==="match") bodyBox.appendChild(matchEditor(q));
+    else if(q.type==="fill") bodyBox.appendChild(fillEditor(q));
+    else bodyBox.appendChild(mcEditor(q));
+  }
+  tySel.addEventListener("change",function(){ q.type=tySel.value; touched(); drawBody(); });
+  drawBody();
   c.addEventListener("click",function(e){
     var a=e.target.closest("[data-a]"); if(!a) return; var act=a.dataset.a, Q=list;
-    if(act==="addopt"){ q.options.push(""); touched(); drawOpts(); }
-    else if(act==="up" && qi>0){ Q.splice(qi-1,0,Q.splice(qi,1)[0]); touched(); redraw(); }
+    if(act==="up" && qi>0){ Q.splice(qi-1,0,Q.splice(qi,1)[0]); touched(); redraw(); }
     else if(act==="down" && qi<Q.length-1){ Q.splice(qi+1,0,Q.splice(qi,1)[0]); touched(); redraw(); }
     else if(act==="del"){
       if(a.dataset.armed){ Q.splice(qi,1); touched(); redraw(); toast("Question deleted"); }
@@ -1136,9 +1220,19 @@ function problems(){
   });
   function checkQ(q,label){
     if(!q.q.trim()) out.push(label+" has no question text.");
-    var filled=q.options.filter(function(o){ return o.trim(); }).length;
-    if(filled<2) out.push(label+" needs at least two answers.");
-    if(!q.options[q.correct] || !q.options[q.correct].trim()) out.push(label+": the answer marked correct is blank.");
+    var type=q.type||"mc";
+    if(type==="match"){
+      var pairs=(q.pairs||[]).filter(function(p){ return p.left.trim() && p.right.trim(); });
+      if(pairs.length<2) out.push(label+" needs at least two complete pairs.");
+    } else if(type==="fill"){
+      var n=fillBlankCount(q.text);
+      if(!n) out.push(label+" has no blanks (use ___ in the text to mark one).");
+      else if((q.answers||[]).some(function(a){ return !String(a||"").trim(); })) out.push(label+": every blank needs an accepted answer.");
+    } else {
+      var filled=q.options.filter(function(o){ return o.trim(); }).length;
+      if(filled<2) out.push(label+" needs at least two answers.");
+      if(!q.options[q.correct] || !q.options[q.correct].trim()) out.push(label+": the answer marked correct is blank.");
+    }
   }
   state.pages.forEach(function(p,i){
     if(!p.check || !p.check.on) return;
@@ -1185,7 +1279,7 @@ function courseData(imageMap, videoMap, assetMap){
   return {
     preview: !imageMap,
     title:state.title, description:state.description, author:state.author, scorm:state.scorm,
-    passMark:state.passMark, accent:state.design.accent, showAnswers:state.showAnswers, allowRetry:state.allowRetry, shuffle:state.shuffle,
+    passMark:state.passMark, accent:state.design.accent, showAnswers:state.showAnswers, allowRetry:state.allowRetry, shuffle:state.shuffle, showBadge:state.showBadge!==false,
     design: designData(assetMap),
     pages:state.pages.map(function(p,i){
       var chk = (p.check && p.check.on && p.check.questions.length) ? {mustPass:p.check.mustPass!==false, questions:p.check.questions.map(cleanQ)} : null;
@@ -1195,10 +1289,18 @@ function courseData(imageMap, videoMap, assetMap){
   };
 }
 function cleanQ(q){
-  // drop blank answers but keep the correct index pointing at the right one
+  var type=q.type||"mc";
+  if(type==="match"){
+    var pairs=(q.pairs||[]).filter(function(p){ return p.left.trim() && p.right.trim(); }).map(function(p){ return {left:p.left, right:p.right}; });
+    return {type:"match", q:q.q, pairs:pairs, feedback:q.feedback||""};
+  }
+  if(type==="fill"){
+    return {type:"fill", q:q.q, text:q.text||"", answers:(q.answers||[]).map(function(a){ return String(a||""); }), feedback:q.feedback||""};
+  }
+  // mc: drop blank answers but keep the correct index pointing at the right one
   var opts=[], correct=0;
   q.options.forEach(function(o,oi){ if(o.trim()){ if(oi===q.correct) correct=opts.length; opts.push(o); } });
-  return {q:q.q, options:opts, correct:correct, feedback:q.feedback||""};
+  return {type:"mc", q:q.q, options:opts, correct:correct, feedback:q.feedback||""};
 }
 
 function playerHTML(data){
@@ -1257,6 +1359,14 @@ var PLAYER_CSS = [
 ".opt{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--line);border-radius:var(--r2);padding:11px 14px;margin:8px 0;cursor:pointer}",
 ".opt:hover{border-color:var(--accent)}.opt input{margin-top:6px;accent-color:var(--accent)}",
 ".opt.right{border-color:var(--ok);background:var(--ok-bg)}.opt.wrong{border-color:var(--bad);background:var(--bad-bg)}",
+".match-row{display:flex;gap:12px;align-items:center;border:1px solid var(--line);border-radius:var(--r2);padding:11px 14px;margin:8px 0}",
+".match-row .match-left{flex:1}",
+".match-row select{font:inherit;padding:6px 10px;border-radius:var(--r2);border:1px solid var(--line);background:var(--card);color:var(--ink)}",
+".match-row.right{border-color:var(--ok);background:var(--ok-bg)}.match-row.wrong{border-color:var(--bad);background:var(--bad-bg)}",
+".fill-text{font-size:1.05em;line-height:2.4}",
+".fill-text input.blank{font:inherit;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--ink);margin:0 2px}",
+".fill-text input.blank.right{border-color:var(--ok);background:var(--ok-bg)}.fill-text input.blank.wrong{border-color:var(--bad);background:var(--bad-bg)}",
+".fill-key{font-size:.9em;margin-top:6px}",
 ".fb{font-size:.9em;color:var(--muted);margin-top:6px}",
 ".verdict{font-size:.92em;margin-top:8px;padding:8px 12px;border-radius:var(--r2)}",
 ".verdict.ok{background:var(--ok-bg);color:var(--ink)}.verdict.ok strong{color:var(--ok)}",
@@ -1265,6 +1375,7 @@ var PLAYER_CSS = [
 ".pass{color:var(--ok)}.fail{color:var(--bad)}",
 ".muted{color:var(--muted)}",
 ".tag{display:inline-block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}",
+".badge{width:72px;height:72px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;margin:0 0 16px}",
 ".cover{text-align:center;padding-bottom:calc(var(--pad) + 8px)}",
 ".cover img.banner{margin-bottom:28px}",
 ".cover .clogo{height:56px;width:auto;max-width:240px;object-fit:contain;margin:4px auto 18px;display:block}",
@@ -1452,6 +1563,78 @@ function advance(){
   } else { save(); showPage(); }
 }
 
+/* --- question types shared by knowledge checks and the final quiz ---
+   "picked" shapes: mc = option index (number); match = array, picked[leftIndex] = the pair
+   index the learner chose for that left item; fill = array of typed strings, one per blank. */
+function qAnswered(q, picked){
+  var type=q.type||"mc";
+  if(type==="match"){ var p=picked||[]; return q.pairs.every(function(pr,li){ return p[li]!=null; }); }
+  if(type==="fill"){ var p=picked||[]; return q.answers.every(function(a,i){ return p[i]!=null && String(p[i]).trim()!==""; }); }
+  return picked!=null;
+}
+function qCorrect(q, picked){
+  var type=q.type||"mc";
+  if(type==="match"){ var p=picked||[]; return q.pairs.every(function(pr,li){ return p[li]===li; }); }
+  if(type==="fill"){ var p=picked||[]; return q.answers.every(function(a,i){ return String(p[i]||"").trim().toLowerCase()===String(a||"").trim().toLowerCase(); }); }
+  return picked===q.correct;
+}
+function qBody(q, name, picked, locked, showResult, mcOrder){
+  var type=q.type||"mc";
+  if(type==="match"){
+    var p=picked||[], right=shuffle(q.pairs.map(function(pr,pi){ return {t:pr.right, pi:pi}; }));
+    var html="";
+    q.pairs.forEach(function(pr,li){
+      var cls = showResult ? (p[li]===li ? " right" : " wrong") : "";
+      html+='<div class="match-row'+cls+'"><span class="match-left">'+inline(pr.left)+'</span>'+
+        '<select name="'+name+'-'+li+'"'+(locked?' disabled':'')+'><option value="">Choose…</option>'+
+        right.map(function(r){ return '<option value="'+r.pi+'"'+(p[li]===r.pi?' selected':'')+'>'+inline(r.t)+'</option>'; }).join("")+
+        '</select></div>';
+    });
+    return html;
+  }
+  if(type==="fill"){
+    var p=picked||[], parts=String(q.text||"").split(/_{3,}/g), html="<p class=\"fill-text\">";
+    parts.forEach(function(seg,i){
+      html+=inline(seg);
+      if(i<parts.length-1){
+        var val=p[i]!=null?p[i]:"", right=q.answers[i]||"";
+        var cls = showResult ? (String(val).trim().toLowerCase()===right.trim().toLowerCase() ? " right" : " wrong") : "";
+        html+='<input type="text" class="blank'+cls+'" data-blank="'+i+'" size="'+Math.max(6,right.length+2)+'" value="'+esc(val)+'"'+(locked?' disabled':'')+'>';
+      }
+    });
+    html+="</p>";
+    if(showResult) html+='<p class="fill-key muted">Accepted answer'+(q.answers.length>1?'s':'')+': '+q.answers.map(function(a){ return '<b>'+esc(a)+'</b>'; }).join(", ")+'</p>';
+    return html;
+  }
+  var order = mcOrder || q.options.map(function(t,oi){ return {t:t,oi:oi}; });
+  var html="";
+  order.forEach(function(o){
+    var oi=o.oi, cls="";
+    if(showResult){ if(picked===oi) cls = picked===q.correct ? " right" : " wrong"; else if(oi===q.correct) cls=" right"; }
+    html+='<label class="opt'+cls+'"><input type="radio" name="'+name+'" value="'+oi+'"'+(picked===oi?' checked':'')+(locked?' disabled':'')+'><span>'+inline(o.t)+'</span></label>';
+  });
+  return html;
+}
+function qWire(container, name, q, getPicked, setPicked, onChange){
+  var type=q.type||"mc";
+  if(type==="match"){
+    container.querySelectorAll('select[name^="'+name+'-"]').forEach(function(s){
+      s.onchange=function(){
+        var li=+s.name.slice(name.length+1), arr=(getPicked()||[]).slice();
+        arr[li]= s.value===""?null:+s.value; setPicked(arr); onChange();
+      };
+    });
+  } else if(type==="fill"){
+    container.querySelectorAll('input[data-blank]').forEach(function(inp){
+      inp.oninput=function(){ var arr=(getPicked()||[]).slice(); arr[+inp.dataset.blank]=inp.value; setPicked(arr); onChange(); };
+    });
+  } else {
+    container.querySelectorAll('input[name="'+name+'"]').forEach(function(r){
+      r.onchange=function(){ setPicked(+r.value); onChange(); };
+    });
+  }
+}
+
 /* --- knowledge check after a page --- */
 function showCheck(){
   onCover=false;
@@ -1460,17 +1643,9 @@ function showCheck(){
     var html='<span class="tag">Knowledge check</span><h2>'+inline(p.heading)+'</h2>'+
       '<p class="muted">'+(K.mustPass?'Answer '+(K.questions.length===1?'this question':'these questions')+' correctly to carry on.':'Quick practice. This does not count towards your score.')+'</p>';
     K.questions.forEach(function(q,qi){
-      var res = marked ? marked[qi] : null;
-      html+='<fieldset class="q" style="border:0;padding:0"><legend><h3>'+(K.questions.length>1?(qi+1)+'. ':'')+inline(q.q)+'</h3></legend>';
-      q.options.forEach(function(o,oi){
-        var cls="";
-        if(res){
-          if(picks[qi]===oi) cls = res.ok ? " right" : " wrong";
-          else if(!K.mustPass && oi===q.correct) cls=" right";
-        }
-        var lock = res && (res.ok || !K.mustPass);
-        html+='<label class="opt'+cls+'"><input type="radio" name="k'+qi+'" value="'+oi+'"'+(picks[qi]===oi?' checked':'')+(lock?' disabled':'')+'><span>'+inline(o)+'</span></label>';
-      });
+      var res = marked ? marked[qi] : null, locked = !!(res && (res.ok || !K.mustPass));
+      html+='<fieldset class="q" style="border:0;padding:0"><legend><h3>'+(K.questions.length>1?(qi+1)+'. ':'')+inline(q.q)+'</h3></legend>'+
+        qBody(q, 'k'+qi, picks[qi], locked, !!res);
       if(res){
         html+='<div class="verdict '+(res.ok?'ok':'no')+'"><strong>'+(res.ok?'Correct.':'Not quite.')+'</strong>'+
           (res.ok ? (q.feedback ? ' '+inline(q.feedback) : '')
@@ -1486,18 +1661,25 @@ function showCheck(){
     else foot='<button id="kback">Back to page</button><button class="go" id="kretry">Try again</button>';
     shell(html, foot);
     var cnt=document.querySelector(".count"); if(cnt) cnt.textContent="Page "+(page+1)+" of "+C.pages.length+" · Knowledge check";
+    function allAnswered(){ return K.questions.every(function(q,qi){ return qAnswered(q, picks[qi]); }); }
+    var fieldsets=app.querySelectorAll("fieldset.q");
+    K.questions.forEach(function(q,qi){
+      qWire(fieldsets[qi], 'k'+qi, q, function(){ return picks[qi]; }, function(v){ picks[qi]=v; }, function(){
+        var c=document.getElementById("kcheck"); if(c) c.disabled=!allAnswered();
+      });
+    });
     var b;
-    app.querySelectorAll('input[type=radio]').forEach(function(r){ r.onchange=function(){ picks[+r.name.slice(1)]=+r.value; var c=document.getElementById("kcheck"); if(c) c.disabled=Object.keys(picks).length<K.questions.length; }; });
-    if(b=document.getElementById("kcheck")){ b.disabled=Object.keys(picks).length<K.questions.length; b.onclick=function(){
-      marked=K.questions.map(function(q,qi){ return {ok:picks[qi]===q.correct}; });
+    if(b=document.getElementById("kcheck")){ b.disabled=!allAnswered(); b.onclick=function(){
+      marked=K.questions.map(function(q,qi){ return {ok:qCorrect(q, picks[qi])}; });
       if(marked.every(function(r){ return r.ok; }) || !K.mustPass){ if(checked.indexOf(page)<0){ checked.push(page); save(); } }
       draw();
     }; }
     if(b=document.getElementById("kretry")) b.onclick=function(){
       // keep the right answers, clear the wrong ones
-      marked.forEach(function(r,qi){ if(!r.ok) delete picks[qi]; });
+      marked.forEach(function(r,qi){ if(!r.ok) picks[qi]=undefined; });
       var keep=marked; marked=null; draw();
-      keep.forEach(function(r,qi){ if(r.ok) app.querySelectorAll('input[name="k'+qi+'"]').forEach(function(x){ x.disabled=true; }); });
+      var fs2=app.querySelectorAll("fieldset.q");
+      keep.forEach(function(r,qi){ if(r.ok && fs2[qi]) fs2[qi].querySelectorAll("input,select").forEach(function(x){ x.disabled=true; }); });
     };
     if(b=document.getElementById("kgo")) b.onclick=advance;
     if(b=document.getElementById("kback")) b.onclick=function(){ showPage(); };
@@ -1507,7 +1689,11 @@ function showCheck(){
 
 function startQuiz(){
   answers={}; result=null;
-  quizOrder = C.quiz.map(function(q,i){ var o=q.options.map(function(t,oi){ return {t:t,oi:oi}; }); return {i:i, opts: C.shuffle?shuffle(o):o}; });
+  quizOrder = C.quiz.map(function(q,i){
+    var item={i:i};
+    if((q.type||"mc")==="mc"){ var o=q.options.map(function(t,oi){ return {t:t,oi:oi}; }); item.opts = C.shuffle?shuffle(o):o; }
+    return item;
+  });
   if(C.shuffle) quizOrder=shuffle(quizOrder);
   showQuiz();
 }
@@ -1516,12 +1702,8 @@ function showQuiz(){
   var html='<span class="tag">Assessment</span><h2>Check your understanding</h2><p class="muted">Answer every question, then submit. You need '+C.passMark+'% to pass.</p>';
   quizOrder.forEach(function(item,n){
     var q=C.quiz[item.i];
-    html+='<fieldset class="q" style="border:0;padding:0"><legend><h3>'+(n+1)+'. '+inline(q.q)+'</h3></legend>';
-    item.opts.forEach(function(o){
-      var cls="";
-      if(result && C.showAnswers){ if(o.oi===q.correct) cls=" right"; else if(answers[item.i]===o.oi) cls=" wrong"; }
-      html+='<label class="opt'+cls+'"><input type="radio" name="q'+item.i+'" value="'+o.oi+'"'+(answers[item.i]===o.oi?' checked':'')+(result?' disabled':'')+'><span>'+inline(o.t)+'</span></label>';
-    });
+    html+='<fieldset class="q" style="border:0;padding:0"><legend><h3>'+(n+1)+'. '+inline(q.q)+'</h3></legend>'+
+      qBody(q, 'q'+item.i, answers[item.i], !!result, !!(result && C.showAnswers), item.opts);
     if(result && C.showAnswers && q.feedback) html+='<div class="fb">'+inline(q.feedback)+'</div>';
     html+='</fieldset>';
   });
@@ -1536,11 +1718,14 @@ function showQuiz(){
   shell(html, foot);
   var sub=document.getElementById("submit");
   if(sub){
-    var check=function(){ sub.disabled = Object.keys(answers).length < C.quiz.length; };
-    app.querySelectorAll('input[type=radio]').forEach(function(r){ r.onchange=function(){ answers[+r.name.slice(1)]=+r.value; check(); }; });
-    check();
+    function allAnswered(){ return quizOrder.every(function(item){ return qAnswered(C.quiz[item.i], answers[item.i]); }); }
+    var fieldsets=app.querySelectorAll("fieldset.q");
+    quizOrder.forEach(function(item,n){
+      qWire(fieldsets[n], 'q'+item.i, C.quiz[item.i], function(){ return answers[item.i]; }, function(v){ answers[item.i]=v; }, function(){ sub.disabled=!allAnswered(); });
+    });
+    sub.disabled=!allAnswered();
     sub.onclick=function(){
-      var right=0; C.quiz.forEach(function(q,i){ if(answers[i]===q.correct) right++; });
+      var right=0; C.quiz.forEach(function(q,i){ if(qCorrect(q, answers[i])) right++; });
       var pct=Math.round(right/C.quiz.length*100);
       result={right:right,pct:pct,passed:pct>=C.passMark};
       reportScore(pct,result.passed);
@@ -1556,8 +1741,11 @@ function showQuiz(){
 
 function showDone(){
   onCover=false;
-  var msg = HAS_QUIZ ? (lastScore!=null && lastScore>=C.passMark ? "You passed with "+lastScore+"%." : "Your result has been recorded.") : "You have reached the end of this course.";
-  shell('<span class="tag">Complete</span><h2>'+esc(C.title)+'</h2><p>'+msg+'</p><p class="muted">Your progress has been saved'+(S.api?' to the learning platform':'')+'. You can now close this window.</p>',
+  var passed = !HAS_QUIZ || (lastScore!=null && lastScore>=C.passMark);
+  var msg = HAS_QUIZ ? (passed ? "You passed with "+lastScore+"%." : "Your result has been recorded.") : "You have reached the end of this course.";
+  var badge = (C.showBadge && passed) ?
+    '<div class="badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="var(--on-accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L19 7"/></svg></div>' : '';
+  shell(badge+'<span class="tag">Complete</span><h2>'+esc(C.title)+'</h2><p>'+msg+'</p><p class="muted">Your progress has been saved'+(S.api?' to the learning platform':'')+'. You can now close this window.</p>',
     '<button id="again">Go back through the pages</button><button class="go" id="close">Close</button>');
   document.getElementById("again").onclick=function(){ page=0; save(); showPage(); };
   document.getElementById("close").onclick=function(){ terminate(); try{ window.close(); }catch(e){} };

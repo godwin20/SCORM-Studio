@@ -59,6 +59,12 @@ One file: CSS, markup, then one big script in an IIFE. Key areas (search for the
   AI settings are separate in `scorm-studio-ai-v1`. Video files live in IndexedDB `scorm-studio` / `videos`.
 - **Editor views:** `render()` switches on `sel.type`: `renderSettings`, `renderDesign`, `renderPage`, `renderQuiz`.
 - **Question cards:** `questionCard(q, qi, list, redraw)` is shared by the final quiz and per-page knowledge checks.
+  Each question has a `type`: `"mc"` (default, also used for quick true/false — a UI shortcut, not a separate
+  type), `"match"` (`pairs: [{left,right}]`), or `"fill"` (`text` with `___` blanks + `answers: [...]`, matched
+  case-insensitively). `cleanQ(q)` is the single place that shapes a question for export — **a new field on a
+  question type must be added there too, or it's silently dropped from the built course.** The learner-side
+  rendering/grading/wiring for all three types is shared between the final quiz and knowledge checks via
+  `qBody()`, `qWire()`, `qAnswered()` and `qCorrect()` in `PLAYER_JS`.
 - **Validation before export:** `problems()`.
 - **Quiz writing:** `buildPrompt(req)` + `writeQuestions(req, signal)`. Routes (in `aiRoute()` order):
   claude.ai `sample` capability → quiz server (`proxyUrl` + `/generate`) → direct API key (testing only).
@@ -80,7 +86,7 @@ One file: CSS, markup, then one big script in an IIFE. Key areas (search for the
 state = {
   title, description, author,
   scorm: "1.2" | "2004",
-  passMark: 0-100, showAnswers, allowRetry, shuffle,
+  passMark: 0-100, showAnswers, allowRetry, shuffle, showBadge,  // showBadge: completion badge on finish, defaults true
   accent,                         // kept in sync with design.accent for older code paths
   design: {
     theme: "clean"|"deepblue"|"corporate"|"bold"|"warm"|"friendly"|"contrast"|"custom",
@@ -97,14 +103,16 @@ state = {
     keyPoint, callout: "brand"|"info"|"warning"|"success"|"danger",
     video: null | {kind:"file", key, name, type, size, required}
                 | {kind:"embed", url, src, site} | {kind:"remote", url, src, site, required},
-    check: {on, mustPass, questions:[{id, q, options:[...], correct, feedback}]}
+    check: {on, mustPass, questions:[Question]}
   }],
-  quiz: [{id, q, options:[...], correct, feedback}]
+  quiz: [Question]
 }
+// Question = {id, q, feedback, type: "mc"|"match"|"fill", ...type-specific fields (see questionCard above)}
 ```
 
-`ensureDesign(s)` fills in missing design fields and page defaults. **Run it on anything loaded**
-(saved drafts and opened projects) so older courses keep working.
+`ensureDesign(s)` fills in missing design fields, page defaults, `showBadge`, and defaults every question's
+`type` to `"mc"` if missing. **Run it on anything loaded** (saved drafts and opened projects) so older
+courses keep working.
 
 ### SCORM behaviour (in PLAYER_JS)
 

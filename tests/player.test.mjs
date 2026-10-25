@@ -21,6 +21,20 @@ function play(data, lms) {
       r.checked = true;
       r.dispatchEvent(new dom.window.Event("change"));
     },
+    matchPick: (name, leftIndex, pairIndex) => {
+      const s = d.querySelector(`select[name="${name}-${leftIndex}"]`);
+      assert.ok(s, `match select ${name}-${leftIndex} should exist`);
+      s.value = String(pairIndex);
+      s.dispatchEvent(new dom.window.Event("change"));
+    },
+    fillIn: (fieldsetIndex, blankIndex, text) => {
+      const fs = d.querySelectorAll("fieldset.q")[fieldsetIndex];
+      assert.ok(fs, `fieldset ${fieldsetIndex} should exist`);
+      const inp = fs.querySelector(`input[data-blank="${blankIndex}"]`);
+      assert.ok(inp, `blank ${blankIndex} should exist`);
+      inp.value = text;
+      inp.dispatchEvent(new dom.window.Event("input"));
+    },
     heading: () => d.querySelector("h2")?.textContent,
   };
 }
@@ -105,6 +119,57 @@ test("Knowledge check: practice mode lets learners carry on after a wrong answer
   p.click("next"); p.pick("k0", 0); p.click("kcheck");
   assert.ok(p.d.getElementById("kgo"), "Continue offered");
   assert.match(p.d.querySelector(".verdict.no").textContent, /highlighted in green/);
+});
+
+test("Matching question: graded in the final quiz", () => {
+  const quiz = [{ type: "match", q: "Match the term", pairs: [{ left: "Tailgating", right: "Following through a door" }, { left: "Phishing", right: "A fake email" }], feedback: "" }];
+  const p = play(course({ quiz }), fakeLms("1.2"));
+  p.click("next"); p.click("next");
+  p.matchPick("q0", 0, 0); p.matchPick("q0", 1, 1);
+  p.click("submit");
+  assert.equal(p.d.querySelector(".score").textContent, "100%");
+});
+
+test("Matching question: a swapped pair is marked wrong", () => {
+  const quiz = [{ type: "match", q: "Match the term", pairs: [{ left: "Tailgating", right: "Following through a door" }, { left: "Phishing", right: "A fake email" }], feedback: "" }];
+  const p = play(course({ quiz }), fakeLms("1.2"));
+  p.click("next"); p.click("next");
+  p.matchPick("q0", 0, 1); p.matchPick("q0", 1, 0);
+  p.click("submit");
+  assert.equal(p.d.querySelector(".score").textContent, "0%");
+});
+
+test("Fill-in-the-blank: must-pass knowledge check accepts a case-insensitive match, then locks on retry", () => {
+  const pages = course().pages;
+  pages[0].check = { mustPass: true, questions: [{ type: "fill", q: "Complete it", text: "The capital of France is ___.", answers: ["Paris"], feedback: "" }] };
+  const p = play(course({ pages, quiz: [] }), fakeLms("1.2"));
+  p.click("next");
+  p.fillIn(0, 0, "berlin");
+  p.click("kcheck");
+  assert.match(p.d.querySelector(".verdict").textContent, /try again/);
+  p.click("kretry");
+  p.fillIn(0, 0, "  PARIS  ");
+  p.click("kcheck");
+  assert.match(p.d.querySelector(".verdict").textContent, /Correct/);
+  p.click("kgo");
+  assert.equal(p.heading(), "B");
+});
+
+test("Completion badge shows on a pass when enabled, not on a fail or when disabled", () => {
+  const withBadge = play(course({ showBadge: true }), fakeLms("1.2"));
+  withBadge.click("next"); withBadge.click("next");
+  withBadge.pick("q0", 1); withBadge.click("submit"); withBadge.click("finish");
+  assert.ok(withBadge.d.querySelector(".badge"), "badge shown on pass");
+
+  const noBadgeSetting = play(course({ showBadge: false }), fakeLms("1.2"));
+  noBadgeSetting.click("next"); noBadgeSetting.click("next");
+  noBadgeSetting.pick("q0", 1); noBadgeSetting.click("submit"); noBadgeSetting.click("finish");
+  assert.equal(noBadgeSetting.d.querySelector(".badge"), null, "no badge when the course setting is off");
+
+  const failed = play(course({ showBadge: true }), fakeLms("1.2"));
+  failed.click("next"); failed.click("next");
+  failed.pick("q0", 0); failed.click("submit");
+  assert.equal(failed.d.querySelector(".badge"), null, "no badge shown yet on a fail (course isn't finished)");
 });
 
 test("Resume: returns to the saved page and keeps passed checks", () => {
