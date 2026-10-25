@@ -1395,7 +1395,7 @@ function shell(inner, foot){
   var count = onCover ? "" : (page<C.pages.length?'Page '+(page+1)+' of '+C.pages.length:(HAS_QUIZ?'Quiz':''));
   if(onCover) pct=0;
   app.innerHTML =
-    '<header><div class="hd"><h1>'+(D.logo?'<img class="logo" src="'+esc(D.logo)+'" alt="'+esc(D.logoAlt||"")+'">':'')+'<span>'+esc(C.title)+'</span></h1><span class="count">'+count+'</span></div></header>'+
+    '<header><div class="hd"><h1>'+(D.logo?'<img class="logo" src="'+esc(D.logo)+'" alt="'+esc(D.logoAlt||"")+'">':'')+'<span>'+esc(C.title)+'</span></h1><span class="count" aria-live="polite">'+count+'</span></div></header>'+
     '<div class="bar" aria-hidden="true"><i style="width:'+pct+'%"></i></div>'+
     '<main id="main" tabindex="-1"><div class="card'+(onCover?' cover':'')+'">'+inner+'</div></main>'+
     (foot?'<footer><div class="ft">'+foot+'</div></footer>':'');
