@@ -251,9 +251,11 @@ step (tell Keith exactly this):
 1. `npm run build`, then send him `deploy/truenas/app/server.js`.
 2. He copies it straight into the **first** (`/app`) dataset, not a subfolder, then runs in System > Shell:
    ```bash
-   P=$(sudo docker inspect -f '{{range .Mounts}}{{.Source}}{{end}}' ix-scorm-studio-scorm-studio-1)
+   P=$(sudo docker inspect -f '{{range .Mounts}}{{if eq .Destination "/app"}}{{.Source}}{{end}}{{end}}' ix-scorm-studio-scorm-studio-1)
    sudo chown 568:568 "$P"/* && sudo chmod 644 "$P"/*
    ```
+   (Picks out just the `/app` mount - now there are two mounts, so the old one-liner that grabbed
+   every mount's path glued them together with no separator and broke.)
 3. Apps > scorm-studio > Restart.
 
 If he ever turns `AUTO_UPDATE` off, the old all-manual `scorm-studio.html` procedure applies too

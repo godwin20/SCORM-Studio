@@ -84,14 +84,20 @@ If the app must write data, mount a second dataset read-write (e.g. `/mnt/YOUR-P
 | `pull access denied` or timeout | TrueNAS can't reach Docker Hub | Check gateway and DNS in Network > Global Configuration |
 | Log times look wrong | TrueNAS time zone not UK | System > General Settings > Localization |
 
-The container name for a custom app is `ix-<app-name>-<service-name>-1`. Handy one-liner that needs no path typing:
+The container name for a custom app is `ix-<app-name>-<service-name>-1`. Handy one-liner that needs no path typing (only safe for an app with exactly one mount - `{{range .Mounts}}` loops over all of them and glues every `.Source` together with no separator, so with two or more mounts this silently produces a broken, non-existent path):
 
 ```bash
 P=$(sudo docker inspect -f '{{range .Mounts}}{{.Source}}{{end}}' ix-<app>-<app>-1)
 sudo chown 568:568 "$P"/* && sudo chmod 644 "$P"/*
 ```
 
-(For apps with more than one mount, pick the mount by destination instead.)
+For an app with more than one mount (e.g. one read-only for code, one writable for data), pick the
+mount out by its destination path instead - e.g. to target the one mounted at `/app`:
+
+```bash
+P=$(sudo docker inspect -f '{{range .Mounts}}{{if eq .Destination "/app"}}{{.Source}}{{end}}{{end}}' ix-<app>-<app>-1)
+sudo chown 568:568 "$P"/* && sudo chmod 644 "$P"/*
+```
 
 ## Updating an installed app
 

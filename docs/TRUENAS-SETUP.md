@@ -107,9 +107,13 @@ waiting for them to be sent.
 Copied files are owned by your account again, which brings back the `EACCES` error. After every copy:
 
 ```bash
-P=$(sudo docker inspect -f '{{range .Mounts}}{{.Source}}{{end}}' ix-scorm-studio-scorm-studio-1)
+P=$(sudo docker inspect -f '{{range .Mounts}}{{if eq .Destination "/app"}}{{.Source}}{{end}}{{end}}' ix-scorm-studio-scorm-studio-1)
 sudo chown 568:568 "$P"/* && sudo chmod 644 "$P"/*
 ```
+
+(This picks out just the `/app` mount by name - since the app now has two mounts, `/app` and `/live`,
+the older one-liner that just grabbed every mount's path would glue both together with no
+separator and produce a path that doesn't exist.)
 
 Keep the names exactly `server.js` and `scorm-studio.html` (rename `scorm-studio (1).html` downloads).
 
