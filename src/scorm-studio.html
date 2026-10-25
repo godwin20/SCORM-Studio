@@ -178,6 +178,11 @@ input[type=color]{width:48px;height:38px;border:1px solid var(--line);border-rad
 .acc-item{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;gap:8px}
 .acc-item-top{display:flex;gap:8px;align-items:center}
 .acc-item-top input{flex:1}
+.help{position:relative;display:inline-flex;vertical-align:middle;margin-left:6px;text-transform:none;letter-spacing:normal}
+.help-btn{width:18px;height:18px;min-width:18px;padding:0;border-radius:50%;border:1px solid var(--line);background:var(--surface);color:var(--muted);font-family:var(--body);font-size:11px;font-weight:700;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.help-btn:hover{border-color:var(--accent);color:var(--accent)}
+.help-panel{position:absolute;z-index:20;top:24px;left:0;width:300px;max-width:min(300px,80vw);background:var(--surface);color:var(--ink);font-family:var(--body);font-size:13px;font-weight:400;line-height:1.5;padding:10px 12px;border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.18)}
+@media(max-width:560px){.help-panel{left:auto;right:0}}
 .lbl-pin{position:absolute;width:22px;height:22px;margin:-11px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.3)}
 .steps{padding-left:20px;margin:8px 0;font-size:14px}
 .steps li{margin:3px 0}
@@ -440,6 +445,14 @@ function xmlEsc(s){ return esc(s); }
 function el(html){ var t=document.createElement("template"); t.innerHTML=html.trim(); return t.content.firstChild; }
 function toast(msg){ var t=el('<div class="toast" role="status"></div>'); t.textContent=msg; document.body.appendChild(t); setTimeout(function(){ t.remove(); }, 3200); }
 function slug(s){ return (String(s||"course").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||"course").slice(0,60); }
+/* A small "?" button + popover, dropped next to a heading or field to explain what that part
+   does. One delegated click handler (below, near the other top-level listeners) opens/closes
+   every one of these - toggling one closes any other that's open, and clicking outside closes
+   whichever is open - so no per-instance wiring is needed no matter where help() is used. */
+function help(text){
+  return '<span class="help"><button type="button" class="help-btn" aria-label="What does this do?" aria-expanded="false">?</button>'+
+    '<span class="help-panel" hidden>'+esc(text)+'</span></span>';
+}
 
 /* ---------- outline + strip ---------- */
 function renderStrip(){
@@ -476,6 +489,17 @@ document.getElementById("add-page").addEventListener("click", function(){
   sel={type:"page", idx:state.pages.length-1}; touched(); render();
   var h=document.getElementById("pg-heading"); if(h){ h.focus(); h.select(); }
 });
+document.addEventListener("click", function(e){
+  var btn=e.target.closest(".help-btn");
+  if(btn){
+    var panel=btn.nextElementSibling, opening = panel && panel.hidden;
+    document.querySelectorAll(".help-panel").forEach(function(p){ p.hidden=true; });
+    document.querySelectorAll(".help-btn").forEach(function(b){ b.setAttribute("aria-expanded","false"); });
+    if(panel && opening){ panel.hidden=false; btn.setAttribute("aria-expanded","true"); }
+    return;
+  }
+  if(!e.target.closest(".help")) document.querySelectorAll(".help-panel").forEach(function(p){ p.hidden=true; });
+});
 
 /* ---------- editor views ---------- */
 function render(){ renderNav(); renderStrip(); var ed=document.getElementById("editor"); ed.innerHTML="";
@@ -487,7 +511,9 @@ function render(){ renderNav(); renderStrip(); var ed=document.getElementById("e
 
 function renderSettings(ed){
   ed.innerHTML =
-  '<div class="panel-head"><div><span class="eyebrow">imsmanifest.xml · course details</span><h2>Course settings</h2></div></div>'+
+  '<div class="panel-head"><div><span class="eyebrow">imsmanifest.xml · course details</span><h2>Course settings'+
+    help("These describe the course itself and control how the final quiz and overall pass/fail are judged. They don't change how pages look - that's in Design.")+
+    '</h2></div></div>'+
   '<div class="fields">'+
     '<label class="f"><span>Course title</span><input type="text" id="s-title"></label>'+
     '<label class="f"><span>Description <span class="hint">shown on the learner\'s welcome screen</span></span><textarea class="short" id="s-desc"></textarea></label>'+
@@ -497,12 +523,14 @@ function renderSettings(ed){
       '<div class="seg" role="group" aria-label="SCORM version"><button type="button" data-v="1.2">SCORM 1.2</button><button type="button" data-v="2004">SCORM 2004 4th ed.</button></div>'+
       '<span class="hint">Bridge plays both. SCORM 1.2 is the safest choice for most courses.</span></div>'+
     '<div class="row2">'+
-      '<label class="f"><span>Pass mark (%)</span><input type="number" min="0" max="100" step="5" id="s-pass"></label>'+
+      '<label class="f"><span>Pass mark (%)'+help("The score a learner needs on the final quiz to pass the course. Has no effect if the course has no final quiz questions - then it just reports \"completed\" once the learner reaches the last page.")+'</span><input type="number" min="0" max="100" step="5" id="s-pass"></label>'+
       '<div></div>'+
     '</div>'+
     '<label class="check"><input type="checkbox" id="s-show"><span><b>Show correct answers</b> after the quiz is submitted<br><span class="hint">Includes your feedback text for each question</span></span></label>'+
     '<label class="check"><input type="checkbox" id="s-retry"><span><b>Allow retries</b> if the learner fails</span></label>'+
-    '<label class="check"><input type="checkbox" id="s-shuffle"><span><b>Shuffle</b> questions and answers for each attempt</span></label>'+
+    '<label class="check"><input type="checkbox" id="s-shuffle"><span><b>Shuffle</b> questions and answers for each attempt'+
+      help("Mixes up the order of quiz questions, and the order of answer options within each one, separately for every learner. Stops people memorising \"the answer is B\" by position instead of by knowing the content.")+
+      '</span></label>'+
     '<label class="check"><input type="checkbox" id="s-badge"><span><b>Show a completion badge</b> on the finish screen</span></label>'+
     '<div style="display:flex;justify-content:flex-end"><button class="btn small danger" type="button" id="s-new">Start a blank course</button></div>'+
   '</div>';
@@ -530,28 +558,30 @@ function renderDesign(ed){
   var seg=function(id,label,opts){ return '<div class="f" style="display:grid;gap:6px"><span style="font-weight:600;font-size:13.5px">'+label+'</span><div class="seg" role="group" aria-label="'+label+'" data-key="'+id+'">'+
     opts.map(function(o){ return '<button type="button" data-v="'+o[0]+'">'+o[1]+'</button>'; }).join("")+'</div></div>'; };
   ed.innerHTML =
-  '<div class="panel-head"><div><span class="eyebrow">Look and feel · applies to the whole course</span><h2>Design</h2></div></div>'+
+  '<div class="panel-head"><div><span class="eyebrow">Look and feel · applies to the whole course</span><h2>Design'+
+    help("Colours, fonts and layout for the whole course. This only changes what learners see when they take it - the builder you're using right now stays the same.")+
+    '</h2></div></div>'+
   '<div class="design-grid"><div class="fields">'+
-    '<section class="dsec"><h3>Theme</h3><div class="themes" id="d-themes"></div>'+
+    '<section class="dsec"><h3>Theme'+help("A ready-made combination of colours, fonts, header style and corner style, so you get a consistent look in one click. You can still fine-tune anything below afterwards - that switches the theme to \"Custom\".")+'</h3><div class="themes" id="d-themes"></div>'+
       '<span class="hint">Picking a theme sets the colours, fonts, header and corners. Your logo and cover page stay as they are.</span></section>'+
-    '<section class="dsec"><h3>Colours</h3><div class="colours">'+
+    '<section class="dsec"><h3>Colours'+help("Brand is your main accent colour - buttons, the progress bar, links. Background sits behind the content card; Page is the card itself; Text is for headings and body copy. Changing any of these switches the theme to \"Custom\".")+'</h3><div class="colours">'+
       [["accent","Brand","buttons, progress bar"],["bg","Background","behind the page"],["card","Page","the content area"],["text","Text","headings and body"]].map(function(c){
         return '<label class="colour"><input type="color" id="d-'+c[0]+'"><span>'+c[1]+'<small>'+c[2]+'</small></span></label>'; }).join("")+
       '</div><div class="swatches" role="group" aria-label="Quick brand colours"><span class="hint">Quick brand colours:</span></div>'+
       '<div class="warnline" id="d-contrast" role="status"></div></section>'+
-    '<section class="dsec"><h3>Fonts</h3><div class="row2">'+
+    '<section class="dsec"><h3>Fonts'+help("Headings and body text can use different fonts. They load from Google Fonts when the course opens - if a workplace network blocks that, learners just see a similar built-in font instead, so the course never looks broken.")+'</h3><div class="row2">'+
       '<label class="f"><span>Headings</span><select id="d-hfont">'+fontOpts()+'</select></label>'+
       '<label class="f"><span>Body text</span><select id="d-bfont">'+fontOpts()+'</select></label></div>'+
       '<span class="hint">Web fonts download when the course opens. If a network blocks them, a similar standard font is used.</span></section>'+
-    '<section class="dsec"><h3>Layout</h3>'+
+    '<section class="dsec"><h3>Layout'+help("Header bar: Plain keeps it the same colour as the rest of the course; Brand colour fills it with your accent colour instead. Page width controls how wide the content area is on a large screen. Corners and Text size are accessibility options - square corners and large text can help some learners read more easily.")+'</h3>'+
       seg("header","Header bar",[["light","Plain"],["brand","Brand colour"]])+
       seg("width","Page width",[["narrow","Narrow"],["standard","Standard"],["wide","Wide"]])+
       seg("corners","Corners",[["rounded","Rounded"],["square","Square"]])+
       seg("textSize","Text size",[["standard","Standard"],["large","Large"]])+
     '</section>'+
-    '<section class="dsec"><h3>Logo</h3><div class="img-box" id="d-logobox"></div>'+
+    '<section class="dsec"><h3>Logo'+help("Shown top-left in the header on every page, and on the cover page too if you turn one on below.")+'</h3><div class="img-box" id="d-logobox"></div>'+
       '<span class="hint">Shown in the header on every page. A wide PNG with a transparent background works best.</span></section>'+
-    '<section class="dsec"><h3>Cover page</h3>'+
+    '<section class="dsec"><h3>Cover page'+help("An optional first screen before Page 1, showing the course title, description, your logo and a Start button. Useful for setting expectations before the training itself begins.")+'</h3>'+
       '<label class="check"><input type="checkbox" id="d-cover"><span><b>Show a cover page</b> before the first page<br><span class="hint">Course title, description, logo and a start button</span></span></label>'+
       '<div id="d-coverbits" class="fields">'+
         '<label class="f"><span>Start button text</span><input type="text" id="d-coverbtn" maxlength="40"></label>'+
@@ -658,6 +688,16 @@ function renderDesign(ed){
 
 var BLOCK_TYPES = [["text","Text"],["image","Image"],["video","Video"],["quote","Quote"],["keypoint","Key point"],["accordion","Accordion"],["steps","Numbered steps"],["labels","Labelled image"]];
 function blockTypeLabel(type){ var m=BLOCK_TYPES.filter(function(t){ return t[0]===type; })[0]; return m?m[1]:type; }
+var BLOCK_HELP={
+  text:"Ordinary page text. Leave a blank line between paragraphs, start a line with \"- \" for a bullet point, and wrap words in **two asterisks** to make them bold.",
+  image:"A single picture, shown full-width (Standard) or as a wide banner across the top of the page (Banner).",
+  video:"A video file you upload, or a link to one hosted elsewhere. You can require learners to watch it to the end before the Next button unlocks.",
+  quote:"A pulled-out quotation, shown in its own style with an optional attribution underneath.",
+  keypoint:"A short callout for the one thing you most want learners to remember from this page. Pick a colour that matches what it's for, e.g. amber for a warning.",
+  accordion:"A list of headings learners click to expand one at a time. Good for FAQs or optional extra detail that would clutter the page if it were all shown at once.",
+  steps:"The same heading-plus-text list as Accordion, but always shown as a numbered sequence instead of click-to-expand panels. Good for a procedure learners follow in order.",
+  labels:"An image with numbered pins. Learners click a pin to read what you've written about that part, in a panel that appears below the image. Good for a labelled diagram, e.g. \"click each part of your pass to learn what it's for.\""
+};
 function newBlock(type){
   var id=uid("b");
   if(type==="image") return {id:id, type:"image", image:null, imageAlt:"", imagePos:"standard"};
@@ -817,7 +857,7 @@ function draftBox(b, p, ta){
 function blockEditor(b, p, redraw){
   var c=el('<div class="q"></div>');
   c.innerHTML=
-   '<div class="q-top"><span class="eyebrow">'+blockTypeLabel(b.type)+'</span>'+
+   '<div class="q-top"><span class="eyebrow">'+blockTypeLabel(b.type)+(BLOCK_HELP[b.type]?help(BLOCK_HELP[b.type]):"")+'</span>'+
    '<button class="btn small" type="button" data-a="up" aria-label="Move block up">↑</button>'+
    '<button class="btn small" type="button" data-a="down" aria-label="Move block down">↓</button>'+
    '<button class="btn small danger" type="button" data-a="del">Delete</button></div>'+
@@ -876,7 +916,7 @@ function renderPage(ed){
     '<button class="btn small" type="button" id="pg-dup">Duplicate</button>'+
     '<button class="btn small danger" type="button" id="pg-del">Delete</button></div>'+
   '<div class="fields">'+
-    '<label class="f"><span>Heading</span><input type="text" id="pg-heading"></label>'+
+    '<label class="f"><span>Heading'+help("A page is this heading plus any number of content blocks below, shown in the order you add them. Use Duplicate above to copy a page, including its blocks and knowledge check, as a starting point for a similar one.")+'</span><input type="text" id="pg-heading"></label>'+
     '<div class="qlist" id="pg-blocks"></div>'+
     '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">'+
       '<span style="font-weight:600;font-size:13.5px">Add:</span>'+
@@ -942,8 +982,9 @@ function renderCheck(box, p, pageIdx){
   if(!p.check) p.check={on:false, mustPass:true, questions:[]};
   var c=p.check;
   box.innerHTML=
-    '<div class="kc-head"><label class="check"><input type="checkbox" id="kc-on"><span><b>Knowledge check after this page</b><br>'+
-      '<span class="hint">A few quick questions on their own screen before the next page. Not part of the final quiz score.</span></span></label></div>'+
+    '<div class="kc-head"><label class="check"><input type="checkbox" id="kc-on"><span><b>Knowledge check after this page</b>'+
+      help("Quick questions shown on their own screen straight after this page, before the learner moves on. They never count towards the final quiz score - this is just a check that the page's content landed. Turn on \"must answer correctly\" below to make learners get it right before continuing, or leave it off for practice, where they see the answer and can carry on either way. The \"go to\" options can send learners to a different page depending on whether they passed - useful for a remedial page on a wrong answer, or skipping ahead on a right one.")+
+      '<br><span class="hint">A few quick questions on their own screen before the next page. Not part of the final quiz score.</span></span></label></div>'+
     '<div id="kc-body" class="fields"></div>';
   var on=box.querySelector("#kc-on"), body=box.querySelector("#kc-body");
   on.checked=!!c.on;
@@ -1115,7 +1156,9 @@ function shrinkImage(file){
 
 function renderQuiz(ed){
   ed.innerHTML =
-  '<div class="panel-head"><div><span class="eyebrow">cmi.core.score · pass mark '+state.passMark+'%</span><h2>Quiz</h2></div>'+
+  '<div class="panel-head"><div><span class="eyebrow">cmi.core.score · pass mark '+state.passMark+'%</span><h2>Quiz'+
+    help("The one graded assessment at the end of the course, used for the pass/fail result reported to Bridge. This is separate from any knowledge checks on individual pages, which are never graded.")+
+    '</h2></div>'+
   '<button class="btn small primary" type="button" id="q-add">+ Add question</button></div>'+
   '<p class="hint" style="margin:-8px 0 18px">Tick the circle next to the correct answer. With no questions, the course reports <b>completed</b> when the learner reaches the last page. With questions, it reports <b>passed</b> or <b>failed</b> against the pass mark.</p>'+
   '<div id="gen-slot"></div>'+
@@ -1590,7 +1633,9 @@ function questionCard(q,qi,list,redraw){
   if(!q.type) q.type="mc";
   var c=el('<div class="q"></div>');
   c.innerHTML=
-   '<div class="q-top"><span class="eyebrow">Question '+(qi+1)+'</span>'+
+   '<div class="q-top"><span class="eyebrow">Question '+(qi+1)+
+     help("Multiple choice: pick one answer from a list (also used for a quick true/false). Matching: drag or click to pair up items on the left with items on the right. Fill in the blank: type the missing word(s) into a sentence. Click the image: click the correct area of a picture.")+
+     '</span>'+
    '<select class="btn small" id="qty-'+q.id+'" aria-label="Question type">'+
      '<option value="mc">Multiple choice</option>'+
      '<option value="match">Matching</option>'+

@@ -58,6 +58,14 @@ One file: CSS, markup, then one big script in an IIFE. Key areas (search for the
 - **State:** a single `state` object, saved to `localStorage` key `scorm-studio-draft-v1`.
   AI settings are separate in `scorm-studio-ai-v1`. Video files live in IndexedDB `scorm-studio` / `videos`.
 - **Editor views:** `render()` switches on `sel.type`: `renderSettings`, `renderDesign`, `renderPage`, `renderQuiz`.
+- **In-app help:** `help(text)` returns a small "?" button + popover (plain text, no markup) to drop next to a section
+  heading or a field label anywhere in the builder, e.g. `'<h3>Colours'+help("...")+'</h3>'`. One delegated
+  `document` click listener (next to the other top-level listeners near the top of the script) opens/closes every
+  one of these - toggling one closes any other that's open, and clicking outside closes whichever is open - so a
+  new `help()` call never needs its own wiring. `BLOCK_HELP[type]` holds the per-block-type text used in
+  `blockEditor`'s eyebrow line; add a new block type there too. The CSS resets `text-transform`/`letter-spacing`/
+  `font-family` on `.help` itself, because it gets dropped inside uppercase, letter-spaced headings
+  (`.dsec h3`) and mono-font eyebrows (`.eyebrow`) that would otherwise bleed into the popover text.
 - **Page blocks:** a page is a heading plus an ordered list of typed content blocks, not a fixed
   heading+body+image+video+keypoint shape. Block `type`s: `"text"` (`body`, same markdown-lite as before),
   `"image"` (`image`, `imageAlt`, `imagePos: "standard"|"banner"`), `"video"` (`video`, same shape as always —
