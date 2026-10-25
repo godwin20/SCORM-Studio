@@ -10,7 +10,9 @@ key, which stays on the server.
 
 The app is two files in a TrueNAS dataset, `server.js` and `scorm-studio.html`, run by the official
 `node:22-alpine` image as the TrueNAS apps user (568) with read-only access to the folder.
-After `npm run build`, both files are in `deploy/truenas/app/`.
+After `npm run build`, both files are in `deploy/truenas/app/`. A second, small, **writable** dataset
+holds the auto-updated copy of `scorm-studio.html` (see **Auto-update** below) - everything else about
+the app stays read-only.
 
 ---
 
@@ -20,20 +22,24 @@ After `npm run build`, both files are in `deploy/truenas/app/`.
     - Sign in at https://platform.claude.com and add credit under Billing.
     - Create a Workspace (for example "SCORM Studio") and set a monthly spend limit on it.
     - Create an API key inside that workspace and keep it safe.
-2. **Dataset**
-    - Datasets > Add Dataset, name it `scorm-studio`, Dataset Preset **Apps**.
-    - Note its path, for example `/mnt/tank/apps/scorm-studio`.
-3. **Copy the two files in**, straight into the dataset (not inside an `app` subfolder).
+2. **Two datasets**
+    - Datasets > Add Dataset, name it `scorm-studio`, Dataset Preset **Apps**. This one holds
+      `server.js` and the baseline `scorm-studio.html`, and stays read-only to the app.
+    - Datasets > Add Dataset again, name it `scorm-studio-live`, Dataset Preset **Apps**. This one
+      starts empty - the app writes its auto-updated copy of the page into it.
+    - Note both paths, for example `/mnt/tank/apps/scorm-studio` and `/mnt/tank/apps/scorm-studio-live`.
+3. **Copy the two files into the first dataset**, straight in (not inside an `app` subfolder).
    Use WinSCP or Cyberduck over SFTP (turn on SSH in System > Services), or a temporary SMB share.
-4. **Fix permissions** so the apps user can read them (System > Shell):
+   Leave the second dataset empty - the app fills it in on first start.
+4. **Fix permissions on both datasets** so the apps user can read and write them (System > Shell):
    ```bash
-   sudo chown -R 568:568 /mnt/YOUR-POOL/apps/scorm-studio
-   sudo chmod 755 /mnt/YOUR-POOL/apps/scorm-studio
+   sudo chown -R 568:568 /mnt/YOUR-POOL/apps/scorm-studio /mnt/YOUR-POOL/apps/scorm-studio-live
+   sudo chmod 755 /mnt/YOUR-POOL/apps/scorm-studio /mnt/YOUR-POOL/apps/scorm-studio-live
    sudo chmod 644 /mnt/YOUR-POOL/apps/scorm-studio/*
    ```
 5. **Install the app**
-    - Edit the 4 marked lines in `deploy/truenas/truenas-app.yaml`: API key, access code,
-      port (only if 8787 is taken), dataset path.
+    - Edit the 5 marked lines in `deploy/truenas/truenas-app.yaml`: API key, access code,
+      port (only if 8787 is taken), and both dataset paths.
     - Apps > Discover Apps > ⋮ > **Install via YAML**.
     - Name it exactly `scorm-studio` (lowercase letters, numbers and hyphens only).
     - Paste the YAML and Save. Check it at `http://TRUENAS-IP:8787`.
@@ -60,17 +66,43 @@ well (`Lantern-Copper-Harbour-42`). Random option: `openssl rand -base64 12` in 
 
 To change it: Apps > scorm-studio > Edit, change the line, Save. Change it when someone leaves.
 
-## Updating
+## Auto-update
 
-Get the two files from the project's **[Releases page](https://github.com/godwin20/scorm-studio/releases)**
-(each tagged version has `scorm-studio.html` and `server.js` attached, ready to download) instead of
-waiting for them to be sent. A new release is cut by pushing a tag like `v1.0.1`.
+With `AUTO_UPDATE: "1"` (the default in the YAML), the app checks the project's
+**[Releases page](https://github.com/godwin20/SCORM-Studio/releases)** itself, once an hour
+(`UPDATE_INTERVAL_MIN`), and once shortly after it starts. When a newer release has
+`scorm-studio.html` attached, it downloads it, checks the file is a believable size and really is
+SCORM Studio, checks its contents match the sha256 digest GitHub itself reports for it, keeps one
+backup of what was there before, then writes it into the writable `scorm-studio-live` dataset. The
+page is live on the **next refresh - no restart, nothing to copy in by hand.** A release is cut by
+pushing a tag like `v1.2.1` (or via the repo's Release workflow), so pushing ordinary commits to
+`main` never reaches colleagues on its own - only a tagged release does.
+
+Check it worked: `GET /health` with the access code shows `liveVersion` (the applied tag); the app's
+logs (Apps > scorm-studio > Workloads > logs icon) show a line starting `update-check` each time it
+runs, ending `applied vX.Y.Z` on success. If a check fails for any reason - no internet, GitHub down,
+a corrupted download - it logs why and simply leaves whatever's currently live in place; nothing
+ever goes offline waiting for an update.
+
+**`server.js` is never auto-updated** - a change there always needs the manual step below, since it
+holds the access-code check and rate limits and shouldn't apply itself from the internet unreviewed.
+
+To turn auto-update off, Apps > scorm-studio > Edit, set `AUTO_UPDATE` to `"0"`, Save, and go back to
+updating `scorm-studio.html` by hand (below). Switching it back on later picks up from wherever the
+`scorm-studio-live` dataset was left.
+
+## Updating by hand
+
+Get the files from the **[Releases page](https://github.com/godwin20/SCORM-Studio/releases)** (each
+tagged version has `scorm-studio.html` and `server.js` attached, ready to download) instead of
+waiting for them to be sent.
 
 | What changed | What to do |
 | --- | --- |
-| `scorm-studio.html` | Replace the file. No restart; it loads on the next page refresh |
-| `server.js` | Replace the file, then Apps > scorm-studio > Restart |
-| API key, access code, limits, port | Apps > scorm-studio > Edit, change the YAML, Save |
+| `scorm-studio.html`, auto-update off | Replace the file in the `scorm-studio` dataset. No restart; it loads on the next page refresh |
+| `scorm-studio.html`, auto-update on | Nothing to do - it updates itself within the hour. To force it sooner, Apps > scorm-studio > Restart |
+| `server.js` | Replace the file in the `scorm-studio` dataset, then Apps > scorm-studio > Restart (always manual, auto-update or not) |
+| API key, access code, limits, port, `AUTO_UPDATE` | Apps > scorm-studio > Edit, change the YAML, Save |
 
 Copied files are owned by your account again, which brings back the `EACCES` error. After every copy:
 
@@ -109,6 +141,9 @@ sudo docker logs --tail 30 ix-scorm-studio-scorm-studio-1
 | "Could not reach the quiz server" | Tunnel down or app stopped | Check Cloudflared and that the app is Running |
 | "The API key was not accepted" | Key mistyped or deleted | Check it in the Claude Console and the YAML |
 | "run out of credit" | Balance or spend limit reached | Top up, or raise the workspace limit |
+| `bind source path does not exist` on the second volume | `scorm-studio-live` dataset not created yet | Create it (First-time setup, step 2) |
+| `/health` never shows a `liveVersion` | Either auto-update is off, or the first check hasn't run / succeeded yet | Check `AUTO_UPDATE` is `"1"`; check the logs for an `update-check` line and what it says |
+| `update-check` logs `digest did not match` | A download got corrupted in transit (rare) | Harmless - it's refused automatically and retried next hour. Only chase it if it keeps happening |
 
 If log times look wrong, set the time zone in System > General Settings > Localization.
 
@@ -121,9 +156,10 @@ If log times look wrong, set the time zone in System > General Settings > Locali
 | Port | 8787 |
 | Image | `node:22-alpine` |
 | Runs as | apps user, 568:568 |
-| Files in the dataset | `server.js`, `scorm-studio.html` |
+| Files in the `scorm-studio` dataset (read-only) | `server.js`, `scorm-studio.html` |
+| `scorm-studio-live` dataset (writable) | auto-updated `scorm-studio.html` + `.version` + `.bak`, written by the app |
 
 ```bash
-# check the access code works
+# check the access code works, and see which release is currently live
 curl -H "X-Access-Code: YOUR-CODE" http://localhost:8787/health
 ```

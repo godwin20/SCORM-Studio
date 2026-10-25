@@ -13,6 +13,12 @@
 
 //   HTML_FILE          path to scorm-studio.html to host at /   (default: next to server.js)
 //
+//   AUTO_UPDATE        "1" to auto-pull scorm-studio.html from the newest GitHub Release (default off)
+//   LIVE_HTML_FILE     writable path to keep the auto-updated copy in (required for AUTO_UPDATE;
+//                      must be writable - HTML_FILE itself is usually a read-only mount)
+//   UPDATE_REPO        "owner/repo" to check                          (default godwin20/SCORM-Studio)
+//   UPDATE_INTERVAL_MIN how often to check, in minutes, minimum 5      (default 60)
+//
 // Web addresses:
 //   GET  /          the SCORM Studio builder (if scorm-studio.html is present)
 //   GET  /ping      "is it running" check, no code needed
@@ -38,6 +44,16 @@ const HTML_FILE = process.env.HTML_FILE || pathMod.join(__dirname, "scorm-studio
 const TRUST_PROXY = process.env.TRUST_PROXY === "1"; // only true behind a reverse proxy that sets x-forwarded-for itself
 const MAX_BODY = 600 * 1024;       // biggest request accepted (course text)
 const MAX_CONTENT = 150000;        // characters of course text sent to Claude
+
+const AUTO_UPDATE = process.env.AUTO_UPDATE === "1";
+const LIVE_HTML_FILE = process.env.LIVE_HTML_FILE || "";
+const UPDATE_REPO = process.env.UPDATE_REPO || "godwin20/SCORM-Studio";
+const UPDATE_INTERVAL_MIN = Math.max(5, parseInt(process.env.UPDATE_INTERVAL_MIN || "60", 10) || 60);
+const UPDATE_API_BASE = process.env.UPDATE_API_BASE || "https://api.github.com"; // only change for testing
+const UPDATE_INITIAL_DELAY_MS = parseInt(process.env.UPDATE_INITIAL_DELAY_MS || "5000", 10); // only change for testing
+if (AUTO_UPDATE && !LIVE_HTML_FILE) {
+  console.error("AUTO_UPDATE is on but LIVE_HTML_FILE is not set, so there is nowhere writable to put the update. Auto-update is disabled.");
+}
 
 if (!API_KEY || !ACCESS_CODE) {
   console.error("Missing settings: set ANTHROPIC_API_KEY and ACCESS_CODE (see .env.example).");
@@ -179,16 +195,24 @@ function parseDraftText(text) {
 }
 
 // ---------- the builder page ----------
-// Re-read when the file changes, so replacing scorm-studio.html needs no restart.
-let pageCache = { mtime: 0, html: null };
+// Serves LIVE_HTML_FILE (the auto-updated copy) when it exists, else falls back to HTML_FILE
+// (the baseline copy next to server.js, kept current by the usual manual deploy). Re-read
+// whenever the active file - or which file is active - changes, so neither an edit nor an
+// auto-update needs a restart.
+let pageCache = { path: null, mtime: 0, html: null };
+function activeHtmlPath() {
+  try { if (LIVE_HTML_FILE && fs.existsSync(LIVE_HTML_FILE)) return LIVE_HTML_FILE; } catch (e) {}
+  return HTML_FILE;
+}
 function builderPage() {
+  const path = activeHtmlPath();
   try {
-    const st = fs.statSync(HTML_FILE);
-    if (st.mtimeMs !== pageCache.mtime) {
-      let html = fs.readFileSync(HTML_FILE, "utf8");
+    const st = fs.statSync(path);
+    if (path !== pageCache.path || st.mtimeMs !== pageCache.mtime) {
+      let html = fs.readFileSync(path, "utf8");
       // point the page's quiz generator at this server
       html = html.replace(/proxyUrl:\s*"[^"]*"/, "proxyUrl:   location.origin");
-      pageCache = { mtime: st.mtimeMs, html };
+      pageCache = { path, mtime: st.mtimeMs, html };
     }
     return pageCache.html;
   } catch (e) {
@@ -204,6 +228,62 @@ function sendPage(res, html) {
     "X-Frame-Options": "SAMEORIGIN",
   });
   res.end(html);
+}
+
+// ---------- auto-update: poll GitHub Releases for a newer scorm-studio.html ----------
+function liveVersionFile() { return LIVE_HTML_FILE + ".version"; }
+function currentLiveVersion() {
+  try { return fs.readFileSync(liveVersionFile(), "utf8").trim(); } catch (e) { return ""; }
+}
+async function checkForUpdate() {
+  if (!AUTO_UPDATE || !LIVE_HTML_FILE) return;
+  try {
+    const res = await fetch(UPDATE_API_BASE + "/repos/" + UPDATE_REPO + "/releases/latest", {
+      headers: { "user-agent": "scorm-studio-auto-update", "accept": "application/vnd.github+json" },
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!res.ok) { console.log(new Date().toISOString(), "update-check", "http " + res.status); return; }
+    const rel = await res.json();
+    const asset = (rel.assets || []).find((a) => a.name === "scorm-studio.html");
+    if (!rel.tag_name || !asset) { console.log(new Date().toISOString(), "update-check", "no scorm-studio.html asset on the latest release"); return; }
+    if (currentLiveVersion() === rel.tag_name) return; // already up to date
+
+    const dl = await fetch(asset.browser_download_url, {
+      headers: { "user-agent": "scorm-studio-auto-update" },
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!dl.ok) { console.log(new Date().toISOString(), "update-check", "download failed, http " + dl.status); return; }
+    const buf = Buffer.from(await dl.arrayBuffer());
+
+    // Sanity checks before trusting it: looks like the right file, and matches the digest
+    // GitHub itself reported for it (catches a corrupted or tampered-with download).
+    if (buf.length < 50000 || buf.toString("utf8").indexOf("STUDIO_CONFIG") < 0) {
+      console.log(new Date().toISOString(), "update-check", "downloaded file failed a sanity check, not applying " + rel.tag_name);
+      return;
+    }
+    if (asset.digest) {
+      const got = "sha256:" + crypto.createHash("sha256").update(buf).digest("hex");
+      if (got !== asset.digest) {
+        console.log(new Date().toISOString(), "update-check", "digest did not match, not applying " + rel.tag_name);
+        return;
+      }
+    }
+
+    // Keep exactly one rollback copy, then swap the new one in atomically (write + rename,
+    // so a request mid-update never sees a half-written file).
+    try { if (fs.existsSync(LIVE_HTML_FILE)) fs.copyFileSync(LIVE_HTML_FILE, LIVE_HTML_FILE + ".bak"); } catch (e) {}
+    const tmp = LIVE_HTML_FILE + ".tmp";
+    fs.writeFileSync(tmp, buf);
+    fs.renameSync(tmp, LIVE_HTML_FILE);
+    fs.writeFileSync(liveVersionFile(), rel.tag_name);
+    console.log(new Date().toISOString(), "update-check", "applied " + rel.tag_name + " (" + buf.length + " bytes)");
+  } catch (e) {
+    console.log(new Date().toISOString(), "update-check", "failed " + (e && e.name));
+  }
+}
+if (AUTO_UPDATE && LIVE_HTML_FILE) {
+  setTimeout(checkForUpdate, UPDATE_INITIAL_DELAY_MS).unref();
+  setInterval(checkForUpdate, UPDATE_INTERVAL_MIN * 60000).unref();
 }
 
 // ---------- http ----------
@@ -329,7 +409,8 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && path === "/health") {
     if (tooManyBadTries(ip)) return send(res, 429, { code: "rate_limited", message: "Too many wrong access codes. Wait 15 minutes." });
     if (!codeMatches(req.headers["x-access-code"])) { noteBadTry(ip); return send(res, 401, { code: "bad_code" }); }
-    return send(res, 200, { ok: true, model: MODEL, remainingToday: Math.max(0, LIMIT_PER_DAY - usedToday) });
+    return send(res, 200, { ok: true, model: MODEL, remainingToday: Math.max(0, LIMIT_PER_DAY - usedToday),
+      autoUpdate: AUTO_UPDATE, liveVersion: AUTO_UPDATE ? (currentLiveVersion() || null) : undefined });
   }
 
   if (req.method === "POST" && (path === "/generate" || path === "/draft")) {
@@ -344,6 +425,7 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   console.log("SCORM Studio quiz server on port " + PORT + " using " + MODEL +
     " (limits: " + LIMIT_PER_HOUR + "/hour per person, " + LIMIT_PER_DAY + "/day total)");
-  console.log(builderPage() ? "Hosting the builder at / from " + HTML_FILE : "No builder page found at " + HTML_FILE + " (quiz service only)");
+  console.log(builderPage() ? "Hosting the builder at / from " + activeHtmlPath() : "No builder page found at " + HTML_FILE + " (quiz service only)");
+  if (AUTO_UPDATE && LIVE_HTML_FILE) console.log("Auto-update on: checking " + UPDATE_REPO + " every " + UPDATE_INTERVAL_MIN + " min, live copy at " + LIVE_HTML_FILE);
 });
 process.on("SIGTERM", () => server.close(() => process.exit(0)));

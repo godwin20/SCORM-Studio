@@ -12,3 +12,5 @@ services:
     env_file: .env
     ports:
       - "8787:8787"
+    #volumes:                            # only needed if .env turns AUTO_UPDATE on
+    #  - ./live:/live

@@ -76,6 +76,44 @@ export function startMockClaude(questions, { key = "sk-ant-test" } = {}) {
   return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ server, port: server.address().port, seen })));
 }
 
+/** Fake GitHub Releases API, for testing server.js's auto-update checker. GET .../releases/latest
+ * returns whatever was last passed to setRelease(); GET /download/:name serves filesByName[name]. */
+export function startMockGithub(filesByName) {
+  let release = null;
+  const server = http.createServer((req, res) => {
+    const path = (req.url || "").split("?")[0];
+    if (path.endsWith("/releases/latest")) {
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify(release));
+    }
+    const m = path.match(/^\/download\/(.+)$/);
+    if (m && Object.prototype.hasOwnProperty.call(filesByName, m[1])) {
+      res.writeHead(200, { "content-type": "text/html" });
+      return res.end(filesByName[m[1]]);
+    }
+    res.writeHead(404); res.end();
+  });
+  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => {
+    const base = "http://127.0.0.1:" + server.address().port;
+    resolve({ server, base, setRelease: (r) => { release = r; } });
+  }));
+}
+
+/** Polls srv.log() until it matches `pattern`, instead of a fixed sleep that can be too short
+ * under load (e.g. running alongside the Chromium e2e tests). Resolves the matched log text. */
+export function waitForLog(srv, pattern, timeoutMs = 5000) {
+  const started = Date.now();
+  return new Promise((resolve, reject) => {
+    (function poll() {
+      const log = srv.log();
+      const m = log.match(pattern);
+      if (m) return resolve(log);
+      if (Date.now() - started > timeoutMs) return reject(new Error("timed out waiting for " + pattern + " in:\n" + log));
+      setTimeout(poll, 50);
+    })();
+  });
+}
+
 /** Start server.js with the given env. Resolves once it is listening. */
 export function startQuizServer(env) {
   return new Promise((resolve, reject) => {

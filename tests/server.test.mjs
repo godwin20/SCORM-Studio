@@ -1,7 +1,10 @@
 // The quiz server, against a fake Claude API.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { startMockClaude, startQuizServer, extractFunction, SRC, SERVER, SAMPLE_QUESTIONS } from "./helpers.mjs";
+import crypto from "node:crypto";
+import { mkdirSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { startMockClaude, startQuizServer, startMockGithub, waitForLog, extractFunction, ROOT, SRC, SERVER, SAMPLE_QUESTIONS } from "./helpers.mjs";
 
 const CODE = "team-code-123";
 let mock, srv;
@@ -191,4 +194,68 @@ test("buildDraftPrompt in server.js and scorm-studio.html haven't drifted apart"
     { title: "Plain", heading: "Intro", body: content, mode: "polish", instruction: "" },
   ];
   for (const req of reqs) assert.equal(serverBuildDraftPrompt(req), htmlBuildDraftPrompt(req));
+});
+
+const UPDATE_OUT = join(ROOT, "test-output", "auto-update");
+function fakeHtml(marker) {
+  // Must clear AUTO_UPDATE's two sanity gates: contain STUDIO_CONFIG and be over 50,000 bytes.
+  return "<!doctype html>\n<script>var STUDIO_CONFIG={};/* " + marker + " */</script>\n" + "<!-- padding -->".repeat(4000);
+}
+
+test("auto-update applies a newer release and /health reports it", async () => {
+  mkdirSync(UPDATE_OUT, { recursive: true });
+  const live = join(UPDATE_OUT, "live-ok.html");
+  rmSync(live, { force: true }); rmSync(live + ".version", { force: true });
+  const html = fakeHtml("AUTO-UPDATE-TEST-OK");
+  const digest = "sha256:" + crypto.createHash("sha256").update(html).digest("hex");
+  const gh = await startMockGithub({ "scorm-studio.html": html });
+  gh.setRelease({ tag_name: "v9.9.9", assets: [{ name: "scorm-studio.html", browser_download_url: gh.base + "/download/scorm-studio.html", digest }] });
+
+  const srv2 = await startQuizServer({
+    ANTHROPIC_API_KEY: "sk-ant-test", ACCESS_CODE: CODE,
+    AUTO_UPDATE: "1", LIVE_HTML_FILE: live, UPDATE_API_BASE: gh.base, UPDATE_REPO: "test/repo",
+    UPDATE_INITIAL_DELAY_MS: "50", UPDATE_INTERVAL_MIN: "5",
+  });
+  try {
+    await waitForLog(srv2, /update-check/); // the initial check runs after UPDATE_INITIAL_DELAY_MS
+    assert.ok(existsSync(live), "the live file was written");
+    assert.equal(readFileSync(live + ".version", "utf8").trim(), "v9.9.9");
+
+    const page = await (await fetch(srv2.base + "/")).text();
+    assert.match(page, /AUTO-UPDATE-TEST-OK/, "the server now serves the downloaded release, not the baseline");
+
+    const health = await (await fetch(srv2.base + "/health", { headers: { "X-Access-Code": CODE } })).json();
+    assert.equal(health.autoUpdate, true);
+    assert.equal(health.liveVersion, "v9.9.9");
+  } finally {
+    srv2.child.kill(); gh.server.close();
+  }
+});
+
+test("auto-update refuses a release whose file doesn't match its own reported digest", async () => {
+  mkdirSync(UPDATE_OUT, { recursive: true });
+  const live = join(UPDATE_OUT, "live-bad-digest.html");
+  rmSync(live, { force: true }); rmSync(live + ".version", { force: true });
+  const html = fakeHtml("SHOULD-NEVER-BE-APPLIED");
+  const gh = await startMockGithub({ "scorm-studio.html": html });
+  // Claim a digest that doesn't match the real bytes - simulates a corrupted or tampered download.
+  gh.setRelease({ tag_name: "v9.9.9", assets: [{ name: "scorm-studio.html", browser_download_url: gh.base + "/download/scorm-studio.html", digest: "sha256:" + "0".repeat(64) }] });
+
+  const srv2 = await startQuizServer({
+    ANTHROPIC_API_KEY: "sk-ant-test", ACCESS_CODE: CODE,
+    AUTO_UPDATE: "1", LIVE_HTML_FILE: live, UPDATE_API_BASE: gh.base, UPDATE_REPO: "test/repo",
+    UPDATE_INITIAL_DELAY_MS: "50", UPDATE_INTERVAL_MIN: "5",
+  });
+  try {
+    await waitForLog(srv2, /update-check/);
+    assert.equal(existsSync(live), false, "a digest mismatch must never be written to disk");
+
+    const health = await (await fetch(srv2.base + "/health", { headers: { "X-Access-Code": CODE } })).json();
+    assert.equal(health.liveVersion, null);
+
+    const page = await (await fetch(srv2.base + "/")).text();
+    assert.doesNotMatch(page, /SHOULD-NEVER-BE-APPLIED/);
+  } finally {
+    srv2.child.kill(); gh.server.close();
+  }
 });

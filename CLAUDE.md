@@ -205,8 +205,9 @@ Plain Node 18+, no packages. Env vars: `ANTHROPIC_API_KEY`, `ACCESS_CODE` (8+ ch
 `MAX_QUESTIONS` (15), `HTML_FILE`, `API_URL` (tests only), `TRUST_PROXY` (0/unset by default).
 
 Routes: `GET /` (page, re-read when the file changes), `GET /ping` (no code), `GET /health` (checks code,
-shows requests left), `POST /generate` (needs `X-Access-Code`), `POST /draft` (needs `X-Access-Code`, drafts/rewrites
-a page's text, shares the same per-IP/per-day limits as `/generate` — not a separate budget), `/favicon.ico` → 204,
+shows requests left, plus `autoUpdate`/`liveVersion` when auto-update is on), `POST /generate` (needs
+`X-Access-Code`), `POST /draft` (needs `X-Access-Code`, drafts/rewrites a page's text, shares the same
+per-IP/per-day limits as `/generate` — not a separate budget), `/favicon.ico` → 204,
 `HEAD` supported, CORS open. `readBody()`/`askClaude()` hold the body-size guard and upstream-error handling shared
 by both POST routes, so a fix to one applies to both.
 Security: constant-time code compare, 15-minute lockout after 10 wrong codes per IP (pruned every 10 min),
@@ -216,20 +217,48 @@ Real client IP: `cf-connecting-ip` is always trusted (only set by the real Cloud
 is only trusted when `TRUST_PROXY=1` — it's client-supplied otherwise, so trusting it by default would let
 anyone spoof a different IP per request and dodge the per-person rate limit.
 
+**Auto-update** (`AUTO_UPDATE=1`, off by default): `checkForUpdate()` polls
+`GET {UPDATE_API_BASE}/repos/{UPDATE_REPO}/releases/latest` (default repo `godwin20/SCORM-Studio`,
+default `UPDATE_API_BASE=https://api.github.com` — only overridden in tests) once on boot
+(`UPDATE_INITIAL_DELAY_MS`, default 5s) and then every `UPDATE_INTERVAL_MIN` (default 60, floor 5).
+If the latest release's tag differs from what's recorded in `{LIVE_HTML_FILE}.version`, it downloads
+that release's `scorm-studio.html` asset, checks it's plausibly the right file (>50KB, contains
+`STUDIO_CONFIG`) and that its sha256 matches the `digest` GitHub reported for the asset, keeps one
+`.bak` of whatever was live, then writes the new file in with a temp-file-then-rename (atomic, so a
+request mid-swap never sees a half-written page) and updates the version marker. **Only
+`scorm-studio.html` self-updates this way — `server.js` never does**, deliberately, since it holds
+the access-code check and rate limits and a process restart is needed to run new server code anyway.
+`builderPage()`/`activeHtmlPath()` serve `LIVE_HTML_FILE` when it exists, else fall back to `HTML_FILE`
+(the baseline next to `server.js`, still kept current by the manual deploy steps) — so `LIVE_HTML_FILE`
+being unset, missing, or on a read-only mount just means auto-update quietly never kicks in, nothing
+breaks. On TrueNAS this needs a *second*, writable dataset (`deploy/truenas/truenas-app.yaml`'s
+`/live` mount) — the main dataset stays read-only exactly as before, by design, so nothing pulled
+from the internet can ever touch `server.js`. Tested against a local mock GitHub API
+(`startMockGithub` in `tests/helpers.mjs`) rather than the real one — `UPDATE_API_BASE` is the
+test-only override point, same pattern as `API_URL` for Claude.
+
 ## Deploying to TrueNAS (Keith's server)
 
 TrueNAS Community Edition 25.04, custom app via **Apps > Discover Apps > ⋮ > Install via YAML**,
 app name `scorm-studio`, container `ix-scorm-studio-scorm-studio-1`, image `node:22-alpine`, user `568:568`,
-dataset mounted read-only at `/app`, port 8787, public via the Cloudflared app.
+main dataset mounted read-only at `/app` (holds `server.js` + the baseline `scorm-studio.html`), a
+*second*, writable dataset mounted at `/live` (`LIVE_HTML_FILE=/live/scorm-studio.html`, holds only
+the auto-updated page — see "Auto-update" above), port 8787, public via the Cloudflared app.
 
-Update procedure (tell Keith exactly this):
-1. `npm run build`, then send him `deploy/truenas/app/scorm-studio.html` and/or `server.js`.
-2. He copies them straight into the dataset (not a subfolder), then runs in System > Shell:
+With auto-update on (the default), `scorm-studio.html` updates itself within the hour of a GitHub
+Release being cut — nothing to tell Keith to do for that. `server.js` still always needs the manual
+step (tell Keith exactly this):
+1. `npm run build`, then send him `deploy/truenas/app/server.js`.
+2. He copies it straight into the **first** (`/app`) dataset, not a subfolder, then runs in System > Shell:
    ```bash
    P=$(sudo docker inspect -f '{{range .Mounts}}{{.Source}}{{end}}' ix-scorm-studio-scorm-studio-1)
    sudo chown 568:568 "$P"/* && sudo chmod 644 "$P"/*
    ```
-3. `scorm-studio.html` needs no restart. `server.js` needs Apps > scorm-studio > Restart.
+3. Apps > scorm-studio > Restart.
+
+If he ever turns `AUTO_UPDATE` off, the old all-manual `scorm-studio.html` procedure applies too
+(same steps as above, no restart needed for that file). `GET /health` shows which release is
+currently live (`liveVersion`).
 
 Full guide and troubleshooting: `docs/TRUENAS-SETUP.md`.
 

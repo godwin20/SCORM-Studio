@@ -1,7 +1,8 @@
 # SCORM Studio for TrueNAS (Apps > Discover Apps > ⋮ > Install via YAML)
 #
 # Before pasting, change the lines marked  <-- CHANGE
-# (dataset path is already set to Keith's tank/scorm-studio)
+# (the main dataset path is already set to Keith's tank/scorm-studio - the second,
+# writable one for auto-update needs creating first; see docs/TRUENAS-SETUP.md)
 # Full steps are in SETUP.md.
 
 services:
@@ -22,10 +23,20 @@ services:
       TZ: "Europe/London"
       # TRUST_PROXY is deliberately left unset here: behind the Cloudflared app the real
       # visitor IP already arrives as cf-connecting-ip, which the server always trusts.
+      #
+      # Auto-update: when a new GitHub Release is cut, the server checks for it itself and
+      # swaps the page in - no manual copy-and-restart needed for scorm-studio.html. Set
+      # AUTO_UPDATE to "0" to go back to copying files in by hand (see docs/TRUENAS-SETUP.md).
+      # server.js itself is never auto-updated - that still always needs the manual step.
+      AUTO_UPDATE: "1"
+      LIVE_HTML_FILE: "/live/scorm-studio.html"
+      UPDATE_REPO: "godwin20/SCORM-Studio"
+      UPDATE_INTERVAL_MIN: "60"
     ports:
       - "8787:8787"                 # <-- CHANGE the first number if 8787 is already used on your TrueNAS
     volumes:
       - /mnt/tank/scorm-studio:/app:ro
+      - /mnt/tank/scorm-studio-live:/live      # <-- CHANGE: a second, writable dataset for the auto-updated copy
     read_only: true
     tmpfs:
       - /tmp
