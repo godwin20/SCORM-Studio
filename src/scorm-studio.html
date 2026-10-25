@@ -172,6 +172,9 @@ input[type=color]{width:48px;height:38px;border:1px solid var(--line);border-rad
 .imp-list .m{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
 .opts-grid{display:grid;gap:10px;margin:14px 0}
 .status{font-size:14px;color:var(--muted);min-height:1.5em}
+.draft-box{display:grid;gap:10px}
+.draft-preview-wrap{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--surface)}
+.draft-preview{white-space:pre-wrap;font-size:14px;max-height:280px;overflow:auto}
 .steps{padding-left:20px;margin:8px 0;font-size:14px}
 .steps li{margin:3px 0}
 
@@ -304,7 +307,11 @@ var THEMES = {
   bold:      {label:"Bold dark",    accent:"#F5A524", bg:"#0F1720", card:"#1A2430", text:"#F2F5F8", headingFont:"oswald",     bodyFont:"roboto",     header:"brand", corners:"square"},
   warm:      {label:"Warm",         accent:"#B4532A", bg:"#FAF4EC", card:"#FFFFFF", text:"#2B2118", headingFont:"merriweather", bodyFont:"lato",     header:"light", corners:"rounded"},
   friendly:  {label:"Friendly",     accent:"#7C3AED", bg:"#F6F3FF", card:"#FFFFFF", text:"#221A33", headingFont:"nunito",     bodyFont:"nunito",     header:"light", corners:"rounded"},
-  contrast:  {label:"High contrast",accent:"#0033CC", bg:"#FFFFFF", card:"#FFFFFF", text:"#000000", headingFont:"verdana",    bodyFont:"verdana",    header:"light", corners:"square", textSize:"large"}
+  contrast:  {label:"High contrast",accent:"#0033CC", bg:"#FFFFFF", card:"#FFFFFF", text:"#000000", headingFont:"verdana",    bodyFont:"verdana",    header:"light", corners:"square", textSize:"large"},
+  slate:     {label:"Slate",        accent:"#2DD4BF", bg:"#0F172A", card:"#1E293B", text:"#E2E8F0", headingFont:"poppins",    bodyFont:"opensans",   header:"light", corners:"rounded"},
+  mono:      {label:"Mono",         accent:"#111111", bg:"#F4F4F4", card:"#FFFFFF", text:"#111111", headingFont:"system",     bodyFont:"system",     header:"light", corners:"square"},
+  forest:    {label:"Forest",       accent:"#2F6B3A", bg:"#F2EFE4", card:"#FFFFFF", text:"#232A1E", headingFont:"playfair",   bodyFont:"lato",       header:"brand", corners:"rounded"},
+  coral:     {label:"Coral",        accent:"#E8616C", bg:"#FFF3EE", card:"#FFFFFF", text:"#3A2420", headingFont:"montserrat", bodyFont:"nunito",     header:"light", corners:"rounded"}
 };
 function defaultDesign(accent){
   var t=THEMES.clean;
@@ -655,6 +662,61 @@ function newBlock(type){
   if(type==="keypoint") return {id:id, type:"keypoint", text:"", tone:"brand"};
   return {id:id, type:"text", body:""};
 }
+var DRAFT_MODES=[["expand","Expand with more detail"],["tighten","Tighten (shorter, clearer)"],["simplify","Simplify the language"],["polish","Polish grammar & spelling"]];
+/* Asks Claude to rewrite a text block's content. Never overwrites `b.body` itself - the
+   result sits in a preview until the author clicks "Use this", same check-before-you-add
+   approach as the quiz generator. */
+function draftBox(b, p, ta){
+  var box=el('<div class="draft-box"></div>');
+  var st={open:false, mode:"expand", instruction:"", busy:false, error:"", result:null, ctrl:null};
+  function paint(){
+    box.innerHTML = st.open ? (
+      '<div class="gen-row">'+
+        '<label class="f"><span>Mode</span><select id="dr-mode">'+DRAFT_MODES.map(function(m){ return '<option value="'+m[0]+'"'+(m[0]===st.mode?' selected':'')+'>'+m[1]+'</option>'; }).join("")+'</select></label>'+
+        '<label class="f wide"><span>Also <span class="hint">optional</span></span><input type="text" id="dr-inst" placeholder="e.g. keep it under 100 words"></label>'+
+      '</div>'+
+      '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn small primary" type="button" id="dr-go"></button>'+
+        '<button class="btn small ghost" type="button" id="dr-close">Close</button><span class="status" id="dr-status"></span></div>'+
+      '<div id="dr-out"></div>'
+    ) : '<button class="btn small ghost" type="button" id="dr-open">Draft with AI</button>';
+    if(!st.open){ box.querySelector("#dr-open").addEventListener("click",function(){ st.open=true; paint(); }); return; }
+    box.querySelector("#dr-close").addEventListener("click",function(){ if(st.ctrl) st.ctrl.abort(); st.open=false; st.result=null; st.error=""; paint(); });
+    var modeSel=box.querySelector("#dr-mode"); modeSel.addEventListener("change",function(){ st.mode=modeSel.value; });
+    var instInp=box.querySelector("#dr-inst"); instInp.value=st.instruction; instInp.addEventListener("input",function(){ st.instruction=instInp.value; });
+    var go=box.querySelector("#dr-go"), status=box.querySelector("#dr-status"), out=box.querySelector("#dr-out");
+    if(st.busy){ go.textContent="Stop"; go.classList.remove("primary"); status.innerHTML='<span class="spin" aria-hidden="true"></span>Drafting. This usually takes 10 to 20 seconds.'; }
+    else { go.textContent="Draft with AI"; go.classList.add("primary"); status.textContent=st.error||""; }
+    if(st.result!=null && !st.busy){
+      var pv=el('<div class="draft-preview-wrap"><div class="draft-preview"></div><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px"><button class="btn small ghost" type="button" id="dr-discard">Discard</button><button class="btn small primary" type="button" id="dr-use">Use this</button></div></div>');
+      pv.querySelector(".draft-preview").textContent=st.result;
+      out.appendChild(pv);
+      pv.querySelector("#dr-discard").addEventListener("click",function(){ st.result=null; paint(); });
+      pv.querySelector("#dr-use").addEventListener("click",function(){ b.body=st.result; ta.value=st.result; touched(); st.result=null; st.open=false; paint(); toast("Page text updated"); });
+    }
+    go.addEventListener("click",function(){
+      if(st.busy){ if(st.ctrl) st.ctrl.abort(); return; }
+      if((b.body||"").trim().length<10){ st.error="Write a short note first, then let Claude develop it into full text."; paint(); return; }
+      st.busy=true; st.error=""; st.result=null; paint();
+      st.ctrl=new AbortController();
+      var req={title:state.title, heading:p.heading, body:b.body, mode:st.mode, instruction:st.instruction.trim()};
+      writeDraft(req, st.ctrl.signal).then(function(text){ st.result=text; }).catch(function(err){
+        var c=err && err.code;
+        if(c==="cancelled" || (err && err.name==="AbortError")) st.error="Stopped.";
+        else if(c==="not_setup"){ st.error=""; openAiSettings(); }
+        else if(c==="not_granted" || c==="sampling_disabled" || c==="not_declared") st.error="Drafting needs permission to ask Claude, which was not given. Allow it when asked, or set up question writing in Settings.";
+        else if(c==="bad_code") st.error="The quiz server did not accept the access code. Check it in Question writing settings.";
+        else if(c==="bad_key") st.error="The API key was not accepted. Check it in Question writing settings.";
+        else if(c==="no_credit") st.error="The Claude account behind drafting has run out of credit. Ask whoever set it up to top it up.";
+        else if(c==="rate_limited") st.error=err.message || "Too many requests just now. Wait a minute and try again.";
+        else if(c==="unreachable") st.error="Could not reach the quiz server. Check the internet connection and the server address in Question writing settings.";
+        else if(c==="invalid_json") st.error="The reply could not be read. Try again.";
+        else st.error="Text could not be drafted ("+(c||"error")+"). Try again in a moment.";
+      }).then(function(){ st.busy=false; st.ctrl=null; paint(); });
+    });
+  }
+  paint();
+  return box;
+}
 function blockEditor(b, p, redraw){
   var c=el('<div class="q"></div>');
   c.innerHTML=
@@ -667,6 +729,7 @@ function blockEditor(b, p, redraw){
   if(b.type==="text"){
     box.appendChild(el('<label class="f"><span>Content <span class="hint">Blank line = new paragraph · start a line with "- " for a bullet · **bold**</span></span><textarea></textarea></label>'));
     var ta=box.querySelector("textarea"); ta.value=b.body||""; ta.addEventListener("input",function(){ b.body=ta.value; touched(); });
+    box.appendChild(draftBox(b, p, ta));
   } else if(b.type==="image"){
     var imgBox=el('<div class="img-box"></div>'); box.appendChild(imgBox); renderImgBox(imgBox, b);
   } else if(b.type==="video"){
@@ -984,6 +1047,32 @@ function parseQuestionsText(t){
   if(a<0 || b<a) throw {code:"invalid_json"};
   try{ return JSON.parse(t.slice(a,b+1)); }catch(e){ throw {code:"invalid_json"}; }
 }
+// Keep buildDraftPrompt in step with the copy in quiz-server/server.js
+function buildDraftPrompt(req){
+  var modes={
+    expand:"Expand this into a fuller page, adding relevant detail while staying strictly accurate to what's already here. Do not invent facts, numbers, or policies not implied by the original text.",
+    tighten:"Tighten this text: shorter and clearer, with no loss of meaning.",
+    simplify:"Rewrite this in simpler, plainer language suitable for a general workplace audience.",
+    polish:"Fix grammar, spelling and punctuation. Keep the meaning and tone exactly as written."
+  };
+  return "You are helping write a page of a workplace e-learning course. "+(modes[req.mode]||modes.expand)+"\n\n"+
+"Rules:\n"+
+"- Plain British English.\n"+
+"- Output format: a blank line between paragraphs, lines starting with \"- \" for bullets, **double asterisks** for bold. No heading, title or extra commentary, just the replacement text.\n"+
+"- Do not add a sign-off, summary line, or anything not asked for above.\n"+
+(req.instruction?"- Also: "+req.instruction+"\n":"")+
+"\nReply with ONLY a JSON object, no other text, in this shape:\n"+
+'{"text":"..."}\n\n'+
+"COURSE TITLE: "+req.title+"\nPAGE HEADING: "+req.heading+"\n\nCURRENT TEXT:\n"+req.body;
+}
+function parseDraftText(t){
+  t=String(t||"").replace(/```(?:json)?/g,"");
+  var a=t.indexOf("{"), b=t.lastIndexOf("}");
+  if(a<0 || b<a) throw {code:"invalid_json"};
+  var v; try{ v=JSON.parse(t.slice(a,b+1)); }catch(e){ throw {code:"invalid_json"}; }
+  if(!v || typeof v.text!=="string") throw {code:"invalid_json"};
+  return v.text;
+}
 var AI_KEY="scorm-studio-ai-v1";
 function aiLocal(){ try{ return JSON.parse(localStorage.getItem(AI_KEY))||{}; }catch(e){ return {}; } }
 function aiSettings(){
@@ -1041,6 +1130,41 @@ function writeQuestions(req, signal){
         if(r.kind==="proxy"){ if(!body || !Array.isArray(body.questions)) throw {code:"invalid_json"}; return body.questions; }
         var text=(body && body.content || []).filter(function(c){ return c.type==="text"; }).map(function(c){ return c.text; }).join("");
         return parseQuestionsText(text);
+      });
+    });
+  });
+}
+function writeDraft(req, signal){
+  return aiRoute().then(function(r){
+    if(!r) throw {code:"not_setup"};
+    if(r.kind==="claude"){
+      return r.sample.limits().catch(function(){ return null; }).then(function(lim){
+        var cap=lim && lim.maxInputBytes ? Math.floor(lim.maxInputBytes*0.6) : 120000;
+        if(req.body.length>cap) req.body=req.body.slice(0,cap)+"\n\n[content shortened]";
+        return r.sample.json(buildDraftPrompt(req),{modelTier:"default", signal:signal}).then(function(v){
+          if(!v || typeof v.text!=="string") throw {code:"invalid_json"};
+          return v.text;
+        });
+      });
+    }
+    if(req.body.length>150000) req.body=req.body.slice(0,150000)+"\n\n[content shortened]";
+    var url, opts;
+    if(r.kind==="proxy"){
+      if(!r.s.accessCode) throw {code:"not_setup"};
+      url=r.s.proxyUrl+"/draft";
+      opts={method:"POST", signal:signal, headers:{"Content-Type":"application/json","X-Access-Code":r.s.accessCode}, body:JSON.stringify(req)};
+    } else {
+      url="https://api.anthropic.com/v1/messages";
+      opts={method:"POST", signal:signal, headers:{"content-type":"application/json","x-api-key":r.s.apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+        body:JSON.stringify({model:r.s.model, max_tokens:4096, messages:[{role:"user", content:buildDraftPrompt(req)}]})};
+    }
+    return fetch(url, opts).catch(function(e){ if(e && e.name==="AbortError") throw e; throw {code:"unreachable"}; }).then(function(res){
+      return res.text().then(function(txt){
+        var body=null; try{ body=JSON.parse(txt); }catch(e){}
+        if(!res.ok) throw httpError(res.status, body);
+        if(r.kind==="proxy"){ if(!body || typeof body.text!=="string") throw {code:"invalid_json"}; return body.text; }
+        var text=(body && body.content || []).filter(function(c){ return c.type==="text"; }).map(function(c){ return c.text; }).join("");
+        return parseDraftText(text);
       });
     });
   });

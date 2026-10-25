@@ -101,6 +101,14 @@ One file: CSS, markup, then one big script in an IIFE. Key areas (search for the
 - **Quiz writing:** `buildPrompt(req)` + `writeQuestions(req, signal)`. Routes (in `aiRoute()` order):
   claude.ai `sample` capability → quiz server (`proxyUrl` + `/generate`) → direct API key (testing only).
   `cleanGenerated()` validates and shuffles answers. **`buildPrompt` is duplicated in server/server.js — keep both in step.**
+- **Page drafting:** `draftBox(b, p, ta)` is the "Draft with AI" panel on a text block's editor card (`blockEditor`'s
+  `b.type==="text"` branch). Same shape as quiz writing: `buildDraftPrompt(req)` + `writeDraft(req, signal)` go
+  through the same `aiRoute()`/proxy `/draft` route/direct-key paths and the same AI settings, so there's nothing
+  separate to set up. `req` is `{title, heading, body, mode, instruction}` — `mode` is `"expand"|"tighten"|"simplify"|"polish"`,
+  `instruction` is a short optional free-text addition (bounded server-side, same pattern as `focus` on quiz writing).
+  Requires at least 10 characters already in the block (it rewrites/extends what's there, it doesn't invent a page
+  from nothing). The result sits in a preview with **Discard**/**Use this** — never overwrites `b.body` until the
+  author clicks Use this. **`buildDraftPrompt` is duplicated in server/server.js — keep both in step** (same as `buildPrompt`).
 - **Learner player:** `courseData()` + `designData()` → `playerHTML(data)` which inlines `PLAYER_CSS` and
   `PLAYER_JS`. `PLAYER_JS` is written as a function then stringified, so **it cannot use anything from the
   builder's scope**; it only reads the JSON course data embedded in the page.
@@ -123,7 +131,7 @@ state = {
   passMark: 0-100, showAnswers, allowRetry, shuffle, showBadge,  // showBadge: completion badge on finish, defaults true
   accent,                         // kept in sync with design.accent for older code paths
   design: {
-    theme: "clean"|"deepblue"|"corporate"|"bold"|"warm"|"friendly"|"contrast"|"custom",
+    theme: "clean"|"deepblue"|"corporate"|"bold"|"warm"|"friendly"|"contrast"|"slate"|"mono"|"forest"|"coral"|"custom",
     accent, bg, card, text,       // hex colours
     headingFont, bodyFont,        // keys of FONTS
     header: "light"|"brand", width: "narrow"|"standard"|"wide",
@@ -170,7 +178,10 @@ Plain Node 18+, no packages. Env vars: `ANTHROPIC_API_KEY`, `ACCESS_CODE` (8+ ch
 `MAX_QUESTIONS` (15), `HTML_FILE`, `API_URL` (tests only), `TRUST_PROXY` (0/unset by default).
 
 Routes: `GET /` (page, re-read when the file changes), `GET /ping` (no code), `GET /health` (checks code,
-shows requests left), `POST /generate` (needs `X-Access-Code`), `/favicon.ico` → 204, `HEAD` supported, CORS open.
+shows requests left), `POST /generate` (needs `X-Access-Code`), `POST /draft` (needs `X-Access-Code`, drafts/rewrites
+a page's text, shares the same per-IP/per-day limits as `/generate` — not a separate budget), `/favicon.ico` → 204,
+`HEAD` supported, CORS open. `readBody()`/`askClaude()` hold the body-size guard and upstream-error handling shared
+by both POST routes, so a fix to one applies to both.
 Security: constant-time code compare, 15-minute lockout after 10 wrong codes per IP (pruned every 10 min),
 600 KB body cap, the server builds the prompt itself (no free-form chat), logs counts and tokens only
 (never course text).
@@ -217,5 +228,3 @@ Full guide and troubleshooting: `docs/TRUENAS-SETUP.md`.
 - cmi5 export if Global ever moves to an LMS that supports it.
 - More block types (accordion, numbered steps) - the block infrastructure (`newBlock`, `blockEditor`,
   `blockHTML`) now exists, so a new type is a much smaller addition than the original 5.
-- AI-assisted page text drafting (beyond quiz questions), using the same quiz-server infrastructure.
-- More theme/template presets.

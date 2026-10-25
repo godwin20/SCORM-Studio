@@ -18,6 +18,9 @@ after(() => { srv?.child.kill(); mock?.server.close(); });
 const post = (body, code = CODE) => fetch(srv.base + "/generate", {
   method: "POST", headers: { "Content-Type": "application/json", "X-Access-Code": code }, body: JSON.stringify(body),
 });
+const postDraft = (body, code = CODE) => fetch(srv.base + "/draft", {
+  method: "POST", headers: { "Content-Type": "application/json", "X-Access-Code": code }, body: JSON.stringify(body),
+});
 const content = "Tailgating is when someone follows you through a controlled door without using their own pass. Report it.";
 
 test("hosts the builder page and points it at itself", async () => {
@@ -52,6 +55,51 @@ test("rejects bad codes, short content and unknown routes", async () => {
   assert.equal((await post({ content }, "wrong-code")).status, 401);
   assert.equal((await post({ content: "hi" })).status, 400);
   assert.equal((await fetch(srv.base + "/etc/passwd")).status, 404);
+});
+
+test("drafts page text and builds the prompt itself", async () => {
+  const draftMock = await startMockClaude({ text: "A fuller paragraph about tailgating, written for the course." });
+  const draftSrv = await startQuizServer({
+    ANTHROPIC_API_KEY: "sk-ant-test", ACCESS_CODE: CODE,
+    API_URL: `http://127.0.0.1:${draftMock.port}/v1/messages`,
+  });
+  try {
+    const r = await fetch(draftSrv.base + "/draft", {
+      method: "POST", headers: { "Content-Type": "application/json", "X-Access-Code": CODE },
+      body: JSON.stringify({ title: "T", heading: "Doors", body: content, mode: "expand", instruction: "mention reporting it" }),
+    });
+    assert.equal(r.status, 200);
+    const body = await r.json();
+    assert.equal(body.text, "A fuller paragraph about tailgating, written for the course.");
+    const sent = draftMock.seen.at(-1).body.messages[0].content;
+    assert.match(sent, /Expand this into a fuller page/);
+    assert.match(sent, /Also: mention reporting it/);
+    assert.match(sent, /Tailgating is when someone/);
+  } finally {
+    draftSrv.child.kill(); draftMock.server.close();
+  }
+});
+
+test("/draft rejects bad codes and too-short body, same as /generate", async () => {
+  assert.equal((await postDraft({ body: content }, "wrong-code")).status, 401);
+  assert.equal((await postDraft({ body: "hi" })).status, 400);
+});
+
+test("/draft shares the same per-person limit as /generate", async () => {
+  const sharedMock = await startMockClaude(SAMPLE_QUESTIONS);
+  const sharedSrv = await startQuizServer({
+    ANTHROPIC_API_KEY: "sk-ant-test", ACCESS_CODE: CODE,
+    API_URL: `http://127.0.0.1:${sharedMock.port}/v1/messages`, LIMIT_PER_HOUR: "1",
+  });
+  try {
+    const postTo = (path, body) => fetch(sharedSrv.base + path, {
+      method: "POST", headers: { "Content-Type": "application/json", "X-Access-Code": CODE }, body: JSON.stringify(body),
+    });
+    assert.equal((await postTo("/generate", { title: "T", content, count: 1 })).status, 200);
+    assert.equal((await postTo("/draft", { title: "T", heading: "H", body: content, mode: "expand" })).status, 429);
+  } finally {
+    sharedSrv.child.kill(); sharedMock.server.close();
+  }
 });
 
 test("CORS preflight allows the access code header", async () => {
@@ -133,4 +181,14 @@ test("buildPrompt in server.js and scorm-studio.html haven't drifted apart", () 
     { title: "Plain", content, count: 1, level: "easy" },
   ];
   for (const req of reqs) assert.equal(serverBuildPrompt(req), htmlBuildPrompt(req));
+});
+
+test("buildDraftPrompt in server.js and scorm-studio.html haven't drifted apart", () => {
+  const serverBuildDraftPrompt = extractFunction(SERVER, "buildDraftPrompt");
+  const htmlBuildDraftPrompt = extractFunction(SRC, "buildDraftPrompt");
+  const reqs = [
+    { title: "Door security", heading: "Tailgating", body: content, mode: "expand", instruction: "mention reporting it" },
+    { title: "Plain", heading: "Intro", body: content, mode: "polish", instruction: "" },
+  ];
+  for (const req of reqs) assert.equal(serverBuildDraftPrompt(req), htmlBuildDraftPrompt(req));
 });

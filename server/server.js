@@ -18,6 +18,7 @@
 //   GET  /ping      "is it running" check, no code needed
 //   GET  /health    checks the access code, shows requests left today
 //   POST /generate  writes quiz questions (needs the access code)
+//   POST /draft     drafts or rewrites a page's text (needs the access code; shares the same limits)
 
 "use strict";
 const http = require("http");
@@ -134,6 +135,49 @@ function parseQuestions(text) {
   try { const v = JSON.parse(t.slice(a, b + 1)); return Array.isArray(v) ? v : null; } catch (e) { return null; }
 }
 
+// ---------- page drafting prompt (keep in step with buildDraftPrompt in scorm-studio.html) ----------
+function buildDraftPrompt(req) {
+  const modes = {
+    expand: "Expand this into a fuller page, adding relevant detail while staying strictly accurate to what's already here. Do not invent facts, numbers, or policies not implied by the original text.",
+    tighten: "Tighten this text: shorter and clearer, with no loss of meaning.",
+    simplify: "Rewrite this in simpler, plainer language suitable for a general workplace audience.",
+    polish: "Fix grammar, spelling and punctuation. Keep the meaning and tone exactly as written.",
+  };
+  return "You are helping write a page of a workplace e-learning course. " + (modes[req.mode] || modes.expand) + "\n\n" +
+    "Rules:\n" +
+    "- Plain British English.\n" +
+    "- Output format: a blank line between paragraphs, lines starting with \"- \" for bullets, **double asterisks** for bold. No heading, title or extra commentary, just the replacement text.\n" +
+    "- Do not add a sign-off, summary line, or anything not asked for above.\n" +
+    (req.instruction ? "- Also: " + req.instruction + "\n" : "") +
+    "\nReply with ONLY a JSON object, no other text, in this shape:\n" +
+    '{"text":"..."}\n\n' +
+    "COURSE TITLE: " + req.title + "\nPAGE HEADING: " + req.heading + "\n\nCURRENT TEXT:\n" + req.body;
+}
+
+function cleanDraftRequest(b) {
+  if (!b || typeof b !== "object") return null;
+  const str = (v, max) => String(v == null ? "" : v).slice(0, max);
+  const body = str(b.body, MAX_CONTENT + 1000);
+  if (body.trim().length < 10) return null;
+  return {
+    title: str(b.title, 200),
+    heading: str(b.heading, 200),
+    body: body.length > MAX_CONTENT ? body.slice(0, MAX_CONTENT) + "\n\n[content shortened]" : body,
+    mode: ["expand", "tighten", "simplify", "polish"].includes(b.mode) ? b.mode : "expand",
+    instruction: str(b.instruction, 200).trim(),
+  };
+}
+
+function parseDraftText(text) {
+  const t = String(text || "").replace(/```(?:json)?/g, "");
+  const a = t.indexOf("{"), b = t.lastIndexOf("}");
+  if (a < 0 || b < a) return null;
+  try {
+    const v = JSON.parse(t.slice(a, b + 1));
+    return v && typeof v.text === "string" ? v.text : null;
+  } catch (e) { return null; }
+}
+
 // ---------- the builder page ----------
 // Re-read when the file changes, so replacing scorm-studio.html needs no restart.
 let pageCache = { mtime: 0, html: null };
@@ -194,6 +238,74 @@ async function callClaude(prompt) {
   return { status: r.status, body };
 }
 
+// Reads a request body up to MAX_BODY, then calls onDone(rawString). Over the cap, replies
+// 413 and destroys the socket; a guard against re-entry keeps a late chunk from calling
+// send() a second time on the same response (that threw ERR_HTTP_HEADERS_SENT and killed
+// the process, before this guard existed).
+function readBody(req, res, onDone) {
+  let size = 0;
+  const chunks = [];
+  let aborted = false;
+  req.on("data", (c) => {
+    if (aborted) return;
+    size += c.length;
+    if (size > MAX_BODY) { aborted = true; send(res, 413, { code: "too_large" }); req.destroy(); return; }
+    chunks.push(c);
+  });
+  req.on("end", () => { if (!aborted) onDone(Buffer.concat(chunks).toString("utf8")); });
+}
+
+// Calls Claude with `prompt`, parses its reply with `parseFn`, and responds; shared by
+// /generate and /draft so the upstream-error handling only lives in one place.
+async function askClaude(res, ip, prompt, parseFn, logNote, respond) {
+  try {
+    const started = Date.now();
+    const { status, body } = await callClaude(prompt);
+    if (status !== 200) {
+      const msg = (body && body.error && body.error.message) || "";
+      console.log(new Date().toISOString(), ip, "claude error", status, msg.slice(0, 120));
+      if (/credit balance/i.test(msg)) return send(res, 402, { code: "no_credit" });
+      if (status === 429 || status === 529) return send(res, 429, { code: "rate_limited", message: "Claude is busy right now. Try again in a minute." });
+      return send(res, 502, { code: "upstream_error" });
+    }
+    const text = (body.content || []).filter((c) => c.type === "text").map((c) => c.text).join("");
+    const parsed = parseFn(text);
+    if (parsed == null) return send(res, 502, { code: "invalid_json" });
+    console.log(new Date().toISOString(), ip, "ok", logNote(parsed), (Date.now() - started) + "ms",
+      "tokens in/out", body.usage ? body.usage.input_tokens + "/" + body.usage.output_tokens : "?");
+    send(res, 200, respond(parsed));
+  } catch (e) {
+    console.log(new Date().toISOString(), ip, "failed", e && e.name);
+    send(res, 504, { code: "upstream_error" });
+  }
+}
+
+function handleGenerate(req, res, ip) {
+  readBody(req, res, (raw) => {
+    let parsed;
+    try { parsed = cleanRequest(JSON.parse(raw)); } catch (e) { parsed = null; }
+    if (!parsed) return send(res, 400, { code: "bad_request", message: "The course content was missing or too short." });
+    const limited = checkLimits(ip);
+    if (limited) return send(res, 429, { code: "rate_limited", message: limited });
+    askClaude(res, ip, buildPrompt(parsed), parseQuestions,
+      (qs) => qs.length + " questions",
+      (qs) => ({ questions: qs }));
+  });
+}
+
+function handleDraft(req, res, ip) {
+  readBody(req, res, (raw) => {
+    let parsed;
+    try { parsed = cleanDraftRequest(JSON.parse(raw)); } catch (e) { parsed = null; }
+    if (!parsed) return send(res, 400, { code: "bad_request", message: "The page text was missing or too short." });
+    const limited = checkLimits(ip);
+    if (limited) return send(res, 429, { code: "rate_limited", message: limited });
+    askClaude(res, ip, buildDraftPrompt(parsed), parseDraftText,
+      (t) => "draft " + t.length + " chars",
+      (t) => ({ text: t }));
+  });
+}
+
 const server = http.createServer((req, res) => {
   const ip = clientIp(req);
   const path = (req.url || "").split("?")[0];
@@ -220,50 +332,13 @@ const server = http.createServer((req, res) => {
     return send(res, 200, { ok: true, model: MODEL, remainingToday: Math.max(0, LIMIT_PER_DAY - usedToday) });
   }
 
-  if (req.method !== "POST" || path !== "/generate") return send(res, 404, { code: "not_found" });
+  if (req.method === "POST" && (path === "/generate" || path === "/draft")) {
+    if (tooManyBadTries(ip)) return send(res, 429, { code: "rate_limited", message: "Too many wrong access codes. Wait 15 minutes." });
+    if (!codeMatches(req.headers["x-access-code"])) { noteBadTry(ip); return send(res, 401, { code: "bad_code" }); }
+    return path === "/generate" ? handleGenerate(req, res, ip) : handleDraft(req, res, ip);
+  }
 
-  if (tooManyBadTries(ip)) return send(res, 429, { code: "rate_limited", message: "Too many wrong access codes. Wait 15 minutes." });
-  if (!codeMatches(req.headers["x-access-code"])) { noteBadTry(ip); return send(res, 401, { code: "bad_code" }); }
-
-  let size = 0;
-  const chunks = [];
-  let aborted = false;
-  req.on("data", (c) => {
-    if (aborted) return;
-    size += c.length;
-    if (size > MAX_BODY) { aborted = true; send(res, 413, { code: "too_large" }); req.destroy(); return; }
-    chunks.push(c);
-  });
-  req.on("end", async () => {
-    if (aborted) return;
-    let parsed;
-    try { parsed = cleanRequest(JSON.parse(Buffer.concat(chunks).toString("utf8"))); } catch (e) { parsed = null; }
-    if (!parsed) return send(res, 400, { code: "bad_request", message: "The course content was missing or too short." });
-
-    const limited = checkLimits(ip);
-    if (limited) return send(res, 429, { code: "rate_limited", message: limited });
-
-    try {
-      const started = Date.now();
-      const { status, body } = await callClaude(buildPrompt(parsed));
-      if (status !== 200) {
-        const msg = (body && body.error && body.error.message) || "";
-        console.log(new Date().toISOString(), ip, "claude error", status, msg.slice(0, 120));
-        if (/credit balance/i.test(msg)) return send(res, 402, { code: "no_credit" });
-        if (status === 429 || status === 529) return send(res, 429, { code: "rate_limited", message: "Claude is busy right now. Try again in a minute." });
-        return send(res, 502, { code: "upstream_error" });
-      }
-      const text = (body.content || []).filter((c) => c.type === "text").map((c) => c.text).join("");
-      const questions = parseQuestions(text);
-      if (!questions) return send(res, 502, { code: "invalid_json" });
-      console.log(new Date().toISOString(), ip, "ok", questions.length + " questions", (Date.now() - started) + "ms",
-        "tokens in/out", body.usage ? body.usage.input_tokens + "/" + body.usage.output_tokens : "?");
-      send(res, 200, { questions });
-    } catch (e) {
-      console.log(new Date().toISOString(), ip, "failed", e && e.name);
-      send(res, 504, { code: "upstream_error" });
-    }
-  });
+  return send(res, 404, { code: "not_found" });
 });
 
 server.listen(PORT, () => {
