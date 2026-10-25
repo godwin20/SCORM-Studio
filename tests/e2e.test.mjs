@@ -120,6 +120,45 @@ test("exported course: cover, knowledge check and completion in a fake LMS", asy
   await ctx.close();
 });
 
+test("Labelled image: pins placed in the editor export and work in the built course", async (t) => {
+  const b = await freshBuilder(t); if (!b) return;
+  const { page, ctx } = b;
+  await page.click("#nav-pages .nav-item >> nth=0");
+  await page.click('[data-addblock="labels"]');
+  await page.setInputFiles(".q:last-child input[type=file]", join(OUT, "pic.png"));
+  await page.waitForSelector(".q:last-child .hs-draw");
+  const stage = page.locator(".q:last-child .hs-draw");
+  const box = await stage.boundingBox();
+  await stage.click({ position: { x: box.width * 0.25, y: box.height * 0.3 } });
+  await page.fill(".q:last-child .acc-item:nth-child(1) input", "Photo");
+  await page.fill(".q:last-child .acc-item:nth-child(1) textarea", "Confirms it is your pass.");
+  await stage.click({ position: { x: box.width * 0.75, y: box.height * 0.7 } });
+  await page.fill(".q:last-child .acc-item:nth-child(2) input", "Chip");
+  await page.fill(".q:last-child .acc-item:nth-child(2) textarea", "Unlocks the doors you are cleared for.");
+
+  const zip = await exportZip(page, "labels.zip");
+  const names = Object.keys(zip.files);
+  assert.ok(names.some((n) => /^media\/page-1-\d+\.png$/.test(n)), "the labelled image is exported to media/, not left inline");
+  const dir = join(OUT, "labels");
+  await unpack(zip, dir);
+
+  const lp = await ctx.newPage();
+  const errs = [];
+  lp.on("pageerror", (e) => errs.push(e.message));
+  await lp.goto(pathToFileURL(join(dir, "index.html")).href);
+  const pins = lp.locator(".lbl-pin");
+  await pins.first().waitFor();
+  assert.equal(await pins.count(), 2);
+  await pins.nth(0).click();
+  assert.match(await lp.locator(".lbl-bubble").innerText(), /Photo/);
+  assert.match(await lp.locator(".lbl-bubble").innerText(), /Confirms it is your pass/);
+  await pins.nth(1).click();
+  assert.match(await lp.locator(".lbl-bubble").innerText(), /Chip/);
+  assert.match(await lp.locator(".lbl-bubble").innerText(), /Unlocks the doors/);
+  assert.deepEqual(errs, []);
+  await ctx.close();
+});
+
 test("hosted: first visit asks for the access code, then generates questions", async (t) => {
   if (!browser) return t.skip("Chromium not installed");
   const mock = await startMockClaude(SAMPLE_QUESTIONS);

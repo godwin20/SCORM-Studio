@@ -65,13 +65,23 @@ One file: CSS, markup, then one big script in an IIFE. Key areas (search for the
   key-point callout, now placeable anywhere and more than once per page), `"accordion"` and `"steps"`
   (both `items: [{title, body}]` — same shape, only `blockHTML` renders them differently: `accordion` as
   collapsible `<details>` panels, `steps` as a numbered list with `h3` headings. `itemsEditor(b)` is the one
-  shared add/remove-item editor both use). `newBlock(type)` creates one,
+  shared add/remove-item editor both use), and `"labels"` (`image`, `imageAlt`, `points: [{x, y, title, body}]`
+  — a "click pins on an image to learn about each part" block, x/y are 0-100 percentages like the hotspot
+  question's zones but points not boxes. `labelsEditor(b)` is a click-to-drop-a-pin editor reusing the
+  hotspot question's `.hs-editor`/`.hs-draw` stage CSS. In the player, clicking a pin opens one shared
+  speech-bubble panel **below** the image (not a floating tooltip next to the pin) with a small arrow
+  positioned by the same x% as the pin — deliberately not absolutely-positioned next to the pin, since that
+  risks spilling off-screen at phone width; this way is simpler and works at any width. Image export reuses
+  `buildZip()`'s ordinary image-block path (`(b.type==="image" || b.type==="labels") && b.image`), so it's
+  one shared branch, not a separate one.). `newBlock(type)` creates one,
   `blockEditor(b, p, redraw)` is the shared editor card (reuses the same up/down/delete pattern as
   `questionCard`), `blockHTML(b, bi)` in `PLAYER_JS` renders one for the learner. **A block type's fields are
   shaped in three places that must all agree, or the type silently loses data: `newBlock()` (what a fresh one
   looks like), `courseData()`'s block map (what gets exported/played — this one's a plain `if` chain with no
   default case for unknown fields, so a type missing here falls through to `{type:"text", body:b.body||""}`
-  and silently exports as empty text), and `blockHTML()` in `PLAYER_JS` (how it renders).** `pageText(p,i)`
+  and silently exports as empty text), and `blockHTML()` in `PLAYER_JS` (how it renders).** A block type with
+  its own image (like `"labels"`) also needs a branch in `buildZip()`'s image-export loop, or the image is
+  silently never written to `media/` and `imageMap[b.id]` stays undefined. `pageText(p,i)`
   also needs a branch per type or its content is invisible to quiz writing and AI page drafting.
   `renderImgBox`/`renderVideoBox`
   are reused unchanged for image/video blocks — they already operated generically on whatever object holding
@@ -157,7 +167,7 @@ state = {
   }],
   quiz: [Question]
 }
-// Block = {id, type: "text"|"image"|"video"|"quote"|"keypoint"|"accordion"|"steps", ...type-specific fields (see "Page blocks" above)}
+// Block = {id, type: "text"|"image"|"video"|"quote"|"keypoint"|"accordion"|"steps"|"labels", ...type-specific fields (see "Page blocks" above)}
 // Question = {id, q, feedback, type: "mc"|"match"|"fill"|"hotspot", ...type-specific fields (see questionCard above)}
 ```
 

@@ -123,6 +123,47 @@ test("Page blocks: accordion and numbered steps render, filtering out empty item
   assert.match(steps[1].querySelector(".step-body").textContent, /Green means/);
 });
 
+test("Labelled image: clicking a pin toggles a speech-bubble panel, filtering out empty pins", () => {
+  const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+  const pages = [
+    {
+      id: "p0", heading: "A pass, labelled", check: null,
+      blocks: [
+        { id: "b0", type: "labels", image: PNG, imageAlt: "A security pass", points: [
+          { x: 20, y: 30, title: "Photo", body: "Confirms it's your pass, not someone else's." },
+          { x: 70, y: 60, title: "", body: "This is the chip that unlocks doors." },
+          { x: 50, y: 50, title: "", body: "" },
+        ] },
+      ],
+    },
+  ];
+  const p = play(course({ pages, quiz: [] }), fakeLms("1.2"));
+  const card = p.d.querySelector(".card");
+
+  const pins = card.querySelectorAll(".lbl-pin");
+  assert.equal(pins.length, 2, "the empty pin is filtered out");
+  const bubble = card.querySelector(".lbl-bubble");
+  assert.equal(bubble.hidden, true, "closed until a pin is clicked");
+
+  pins[0].click();
+  assert.equal(bubble.hidden, false);
+  assert.equal(bubble.querySelector("h4").textContent, "Photo");
+  assert.equal(bubble.querySelector("h4").hidden, false);
+  assert.match(bubble.querySelector(".lbl-body").textContent, /Confirms it's your pass/);
+  assert.equal(pins[0].getAttribute("aria-expanded"), "true");
+
+  pins[0].click(); // clicking the same pin again closes it
+  assert.equal(bubble.hidden, true);
+  assert.equal(pins[0].getAttribute("aria-expanded"), "false");
+
+  pins[1].click(); // a pin with no title hides the heading, still shows the body
+  assert.equal(bubble.hidden, false);
+  assert.equal(bubble.querySelector("h4").hidden, true, "no title to show for this pin");
+  assert.match(bubble.querySelector(".lbl-body").textContent, /chip that unlocks doors/);
+  assert.equal(pins[0].getAttribute("aria-expanded"), "false");
+  assert.equal(pins[1].getAttribute("aria-expanded"), "true");
+});
+
 test("SCORM 1.2: failing the quiz reports failed", () => {
   const lms = fakeLms("1.2");
   const p = play(course(), lms);
