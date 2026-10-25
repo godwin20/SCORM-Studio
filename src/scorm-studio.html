@@ -89,6 +89,12 @@ input[type=color]{width:48px;height:38px;border:1px solid var(--line);border-rad
 .img-box{border:1px dashed var(--line);border-radius:10px;padding:14px;display:flex;flex-wrap:wrap;gap:14px;align-items:center}
 .img-box img{max-width:180px;max-height:120px;border-radius:6px;object-fit:cover}
 .img-box video{width:240px;max-width:100%;border-radius:6px;background:#000}
+.hs-editor{position:relative;display:inline-block;max-width:100%;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+.hs-editor img{display:block;max-width:100%;max-height:380px;user-select:none;-webkit-user-drag:none}
+.hs-draw{position:absolute;inset:0;cursor:crosshair}
+.hs-zone{position:absolute;border:2px solid var(--marker);background:rgba(201,138,30,.15);border-radius:3px}
+.hs-zone.correct{border-color:var(--ok);background:rgba(46,125,79,.18)}
+.hs-zone.drawing{border-style:dashed}
 .link-row{display:flex;gap:8px;flex:1;min-width:220px}
 .link-row input{flex:1;min-width:0}
 .vmeta{display:grid;gap:8px;flex:1;min-width:200px}
@@ -1182,6 +1188,79 @@ function fillEditor(q){
   drawAnswers();
   return box;
 }
+function ensureHotspotShape(q){ if(q.image===undefined) q.image=null; if(!q.zones) q.zones=[]; if(q.imageAlt==null) q.imageAlt=""; }
+function hotspotEditor(q){
+  ensureHotspotShape(q);
+  var box=el('<div class="f" style="display:grid;gap:10px"></div>');
+  function draw(){
+    box.innerHTML="";
+    if(!q.image){
+      var lab=el('<label class="btn small">Choose image…<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden></label>');
+      box.appendChild(lab); box.appendChild(el('<span class="hint">PNG, JPG, WebP or GIF. Draw boxes on it once chosen.</span>'));
+      lab.querySelector("input").addEventListener("change",function(e){
+        var f=e.target.files[0]; if(!f) return;
+        shrinkImage(f).then(function(url){ q.image=url; touched(); draw(); }).catch(function(){ toast("That image could not be read. Try a JPG or PNG."); });
+      });
+      return;
+    }
+    var altRow=el('<label class="f"><span>Alt text <span class="hint">describes the image for screen readers</span></span><input type="text"></label>');
+    box.appendChild(altRow);
+    var altInp=altRow.querySelector("input"); altInp.value=q.imageAlt||"";
+    altInp.addEventListener("input",function(){ q.imageAlt=altInp.value; touched(); });
+    box.appendChild(el('<span class="hint">Drag on the image to draw a box, then tick the ones that are a correct answer. You can draw more than one correct box.</span>'));
+    var stage=el('<div class="hs-editor"><img alt=""><div class="hs-draw"></div></div>');
+    var img=stage.querySelector("img"); img.src=q.image;
+    var drawLayer=stage.querySelector(".hs-draw");
+    box.appendChild(stage);
+    var rm=el('<button class="btn small danger" type="button" style="justify-self:start">Remove image</button>');
+    box.appendChild(rm);
+    rm.addEventListener("click",function(){ q.image=null; q.zones=[]; touched(); draw(); });
+    var listBox=el('<div class="opts" style="display:grid;gap:8px"></div>');
+    box.appendChild(listBox);
+
+    function renderZones(){
+      drawLayer.querySelectorAll(".hs-zone").forEach(function(z){ z.remove(); });
+      listBox.innerHTML="";
+      q.zones.forEach(function(z,zi){
+        var mark=el('<div class="hs-zone'+(z.correct?' correct':'')+'"></div>');
+        mark.style.left=z.x+"%"; mark.style.top=z.y+"%"; mark.style.width=z.w+"%"; mark.style.height=z.h+"%";
+        drawLayer.appendChild(mark);
+        var row=el('<div class="opt" style="grid-template-columns:auto 1fr auto"><input type="checkbox" aria-label="Correct answer"><span>Box '+(zi+1)+'</span><button class="btn small ghost" type="button" aria-label="Remove box">✕</button></div>');
+        var chk=row.children[0], x=row.children[2];
+        chk.checked=!!z.correct;
+        chk.addEventListener("change",function(){ z.correct=chk.checked; touched(); renderZones(); });
+        x.addEventListener("click",function(){ q.zones.splice(zi,1); touched(); renderZones(); });
+        listBox.appendChild(row);
+      });
+      if(!q.zones.length) listBox.appendChild(el('<div class="hint">No boxes yet - drag on the image above to draw one.</div>'));
+    }
+    renderZones();
+
+    drawLayer.addEventListener("pointerdown",function(e){
+      if(e.target.closest(".hs-zone")) return;
+      var r=drawLayer.getBoundingClientRect();
+      var startX=(e.clientX-r.left)/r.width*100, startY=(e.clientY-r.top)/r.height*100;
+      var liveBox=el('<div class="hs-zone drawing"></div>'); drawLayer.appendChild(liveBox);
+      var last={x:startX,y:startY,w:0,h:0};
+      function onMove(ev){
+        var cx=(ev.clientX-r.left)/r.width*100, cy=(ev.clientY-r.top)/r.height*100;
+        var x=Math.max(0,Math.min(startX,cx)), y=Math.max(0,Math.min(startY,cy));
+        var w=Math.min(100-x,Math.abs(cx-startX)), h=Math.min(100-y,Math.abs(cy-startY));
+        last={x:x,y:y,w:w,h:h};
+        liveBox.style.left=x+"%"; liveBox.style.top=y+"%"; liveBox.style.width=w+"%"; liveBox.style.height=h+"%";
+      }
+      function onUp(){
+        document.removeEventListener("pointermove",onMove); document.removeEventListener("pointerup",onUp);
+        liveBox.remove();
+        if(last.w>1.5 && last.h>1.5){ q.zones.push({x:last.x,y:last.y,w:last.w,h:last.h,correct:q.zones.length===0}); touched(); renderZones(); }
+      }
+      document.addEventListener("pointermove",onMove);
+      document.addEventListener("pointerup",onUp,{once:true});
+    });
+  }
+  draw();
+  return box;
+}
 function questionCard(q,qi,list,redraw){
   list = list || state.quiz; redraw = redraw || render;
   if(!q.type) q.type="mc";
@@ -1192,6 +1271,7 @@ function questionCard(q,qi,list,redraw){
      '<option value="mc">Multiple choice</option>'+
      '<option value="match">Matching</option>'+
      '<option value="fill">Fill in the blank</option>'+
+     '<option value="hotspot">Click the image</option>'+
    '</select>'+
    '<button class="btn small" type="button" data-a="up" aria-label="Move up">↑</button><button class="btn small" type="button" data-a="down" aria-label="Move down">↓</button>'+
    '<button class="btn small danger" type="button" data-a="del">Delete</button></div>'+
@@ -1206,6 +1286,7 @@ function questionCard(q,qi,list,redraw){
     bodyBox.innerHTML="";
     if(q.type==="match") bodyBox.appendChild(matchEditor(q));
     else if(q.type==="fill") bodyBox.appendChild(fillEditor(q));
+    else if(q.type==="hotspot") bodyBox.appendChild(hotspotEditor(q));
     else bodyBox.appendChild(mcEditor(q));
   }
   tySel.addEventListener("change",function(){ q.type=tySel.value; touched(); drawBody(); });
@@ -1241,6 +1322,10 @@ function problems(){
       var n=fillBlankCount(q.text);
       if(!n) out.push(label+" has no blanks (use ___ in the text to mark one).");
       else if((q.answers||[]).some(function(a){ return !String(a||"").trim(); })) out.push(label+": every blank needs an accepted answer.");
+    } else if(type==="hotspot"){
+      if(!q.image) out.push(label+" has no image.");
+      else if(!(q.zones||[]).length) out.push(label+" has no boxes drawn on the image.");
+      else if(!(q.zones||[]).some(function(z){ return z.correct; })) out.push(label+": mark at least one box as a correct answer.");
     } else {
       var filled=q.options.filter(function(o){ return o.trim(); }).length;
       if(filled<2) out.push(label+" needs at least two answers.");
@@ -1292,7 +1377,7 @@ function designData(assetMap){
     coverButton: (d.coverButton||"Start course").trim()||"Start course"
   };
 }
-function courseData(imageMap, videoMap, assetMap){
+function courseData(imageMap, videoMap, assetMap, hotspotMap){
   return {
     preview: !imageMap,
     title:state.title, description:state.description, author:state.author, scorm:state.scorm,
@@ -1300,13 +1385,13 @@ function courseData(imageMap, videoMap, assetMap){
     design: designData(assetMap),
     pages:state.pages.map(function(p,i){
       var br=p.check&&p.check.branch;
-      var chk = (p.check && p.check.on && p.check.questions.length) ? {mustPass:p.check.mustPass!==false, questions:p.check.questions.map(cleanQ), branch:{pass:(br&&br.pass)||null, fail:(br&&br.fail)||null}} : null;
+      var chk = (p.check && p.check.on && p.check.questions.length) ? {mustPass:p.check.mustPass!==false, questions:p.check.questions.map(function(q){ return cleanQ(q,hotspotMap); }), branch:{pass:(br&&br.pass)||null, fail:(br&&br.fail)||null}} : null;
       return {id:p.id, heading:p.heading, body:p.body, keyPoint:p.keyPoint||"", callout:p.callout||"brand", image:p.image ? (imageMap?imageMap[i]:p.image) : null, imageAlt:p.imageAlt||"", imagePos:p.imagePos||"above", video:videoData(p,i,videoMap), check:chk};
     }),
-    quiz:state.quiz.map(cleanQ)
+    quiz:state.quiz.map(function(q){ return cleanQ(q,hotspotMap); })
   };
 }
-function cleanQ(q){
+function cleanQ(q, hotspotMap){
   var type=q.type||"mc";
   if(type==="match"){
     var pairs=(q.pairs||[]).filter(function(p){ return p.left.trim() && p.right.trim(); }).map(function(p){ return {left:p.left, right:p.right}; });
@@ -1314,6 +1399,11 @@ function cleanQ(q){
   }
   if(type==="fill"){
     return {type:"fill", q:q.q, text:q.text||"", answers:(q.answers||[]).map(function(a){ return String(a||""); }), feedback:q.feedback||""};
+  }
+  if(type==="hotspot"){
+    var img = q.image ? (hotspotMap ? hotspotMap[q.id] : q.image) : null;
+    return {type:"hotspot", q:q.q, image:img, imageAlt:q.imageAlt||"",
+      zones:(q.zones||[]).map(function(z){ return {x:z.x,y:z.y,w:z.w,h:z.h,correct:!!z.correct}; }), feedback:q.feedback||""};
   }
   // mc: drop blank answers but keep the correct index pointing at the right one
   var opts=[], correct=0;
@@ -1396,6 +1486,14 @@ var PLAYER_CSS = [
 ".fill-text input.blank{font:inherit;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--ink);margin:0 2px}",
 ".fill-text input.blank.right{border-color:var(--ok);background:var(--ok-bg)}.fill-text input.blank.wrong{border-color:var(--bad);background:var(--bad-bg)}",
 ".fill-key{font-size:.9em;margin-top:6px}",
+".hs-player{position:relative;display:inline-block;max-width:100%;border-radius:var(--r2);overflow:hidden;border:1px solid var(--line)}",
+".hs-player img{display:block;max-width:100%;max-height:420px;user-select:none;-webkit-user-drag:none}",
+".hs-click{position:absolute;inset:0;cursor:crosshair}",
+".hs-click[data-locked]{cursor:default}",
+".hs-zone{position:absolute;border:2px solid var(--ok);background:var(--ok-bg);pointer-events:none;border-radius:3px}",
+".hs-pick{position:absolute;width:16px;height:16px;margin:-8px;border-radius:50%;background:var(--accent);border:2px solid var(--card);pointer-events:none}",
+".hs-pick.right{background:var(--ok)}.hs-pick.wrong{background:var(--bad)}",
+".hs-alt{margin-top:10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}",
 ".fb{font-size:.9em;color:var(--muted);margin-top:6px}",
 ".verdict{font-size:.92em;margin-top:8px;padding:8px 12px;border-radius:var(--r2)}",
 ".verdict.ok{background:var(--ok-bg);color:var(--ink)}.verdict.ok strong{color:var(--ok)}",
@@ -1607,12 +1705,18 @@ function qAnswered(q, picked){
   var type=q.type||"mc";
   if(type==="match"){ var p=picked||[]; return q.pairs.every(function(pr,li){ return p[li]!=null; }); }
   if(type==="fill"){ var p=picked||[]; return q.answers.every(function(a,i){ return p[i]!=null && String(p[i]).trim()!==""; }); }
+  if(type==="hotspot"){ return picked!=null; }
   return picked!=null;
+}
+function hotspotHit(q, pt){
+  if(!pt) return false;
+  return (q.zones||[]).some(function(z){ return z.correct && pt.x>=z.x && pt.x<=z.x+z.w && pt.y>=z.y && pt.y<=z.y+z.h; });
 }
 function qCorrect(q, picked){
   var type=q.type||"mc";
   if(type==="match"){ var p=picked||[]; return q.pairs.every(function(pr,li){ return p[li]===li; }); }
   if(type==="fill"){ var p=picked||[]; return q.answers.every(function(a,i){ return String(p[i]||"").trim().toLowerCase()===String(a||"").trim().toLowerCase(); }); }
+  if(type==="hotspot"){ return hotspotHit(q, picked); }
   return picked===q.correct;
 }
 function qBody(q, name, picked, locked, showResult, mcOrder){
@@ -1647,6 +1751,19 @@ function qBody(q, name, picked, locked, showResult, mcOrder){
     html+="</p>";
     if(showResult) html+='<p class="fill-key muted">Accepted answer'+(q.answers.length>1?'s':'')+': '+q.answers.map(function(a){ return '<b>'+esc(a)+'</b>'; }).join(", ")+'</p>';
     return html;
+  }
+  if(type==="hotspot"){
+    var pt=picked, hit = pt && qCorrect(q, pt);
+    var marks="";
+    if(showResult){
+      (q.zones||[]).forEach(function(z){ if(z.correct) marks+='<div class="hs-zone right" style="left:'+z.x+'%;top:'+z.y+'%;width:'+z.w+'%;height:'+z.h+'%"></div>'; });
+    }
+    var pickDot = pt ? '<div class="hs-pick'+(showResult?(hit?" right":" wrong"):"")+'" style="left:'+pt.x+'%;top:'+pt.y+'%"></div>' : "";
+    var altList = (q.zones||[]).map(function(z,zi){
+      return '<button type="button" class="btn small" data-zone="'+zi+'"'+(locked?' disabled':'')+'>Area '+(zi+1)+'</button>';
+    }).join("");
+    return '<div class="hs-player" data-hs><img src="'+esc(q.image)+'" alt="'+esc(q.imageAlt||"")+'"><div class="hs-click"'+(locked?' data-locked="1"':"")+'></div>'+marks+pickDot+'</div>'+
+      (altList ? '<div class="hs-alt"><span class="hint">Or choose an area: </span>'+altList+'</div>' : '');
   }
   var order = mcOrder || q.options.map(function(t,oi){ return {t:t,oi:oi}; });
   var html="";
@@ -1746,6 +1863,33 @@ function qWire(container, name, q, getPicked, setPicked, onChange){
     container.querySelectorAll('input[data-blank]').forEach(function(inp){
       inp.oninput=function(){ var arr=(getPicked()||[]).slice(); arr[+inp.dataset.blank]=inp.value; setPicked(arr); onChange(); };
     });
+  } else if(type==="hotspot"){
+    var stage=container.querySelector("[data-hs]");
+    if(stage){
+      // qBody() only bakes the pick-dot into the HTML at render time (same gotcha as match's
+      // .connected class) - place/move it directly here so clicking shows feedback immediately.
+      function placeDot(pt){
+        var dot=stage.querySelector(".hs-pick");
+        if(!dot){ dot=document.createElement("div"); dot.className="hs-pick"; stage.appendChild(dot); }
+        dot.style.left=pt.x+"%"; dot.style.top=pt.y+"%";
+      }
+      var clickLayer=stage.querySelector(".hs-click");
+      if(clickLayer && !clickLayer.dataset.locked){
+        clickLayer.addEventListener("click", function(e){
+          var r=clickLayer.getBoundingClientRect();
+          var pt={x: Math.max(0,Math.min(100,(e.clientX-r.left)/r.width*100)), y: Math.max(0,Math.min(100,(e.clientY-r.top)/r.height*100))};
+          setPicked(pt); placeDot(pt); onChange();
+        });
+      }
+      container.querySelectorAll(".hs-alt button[data-zone]").forEach(function(btn){
+        if(btn.disabled) return;
+        btn.addEventListener("click", function(){
+          var z=q.zones[+btn.dataset.zone]; if(!z) return;
+          var pt={x: z.x+z.w/2, y: z.y+z.h/2};
+          setPicked(pt); placeDot(pt); onChange();
+        });
+      });
+    }
   } else {
     container.querySelectorAll('input[name="'+name+'"]').forEach(function(r){
       r.onchange=function(){ setPicked(+r.value); onChange(); };
@@ -1951,7 +2095,17 @@ function buildZip(){
     var d=dataUrlToBytes(u), name="media/"+a[1]+"."+(extOf[d.type]||"img");
     zip.file(name,d.bytes); assetMap[a[1]]=name; files.push(name);
   });
-  zip.file("index.html", playerHTML(courseData(imageMap, videoMap, assetMap)));
+  var hotspotMap={};
+  function exportHotspotImages(questions){
+    (questions||[]).forEach(function(q){
+      if(q.type!=="hotspot" || !q.image) return;
+      var d=dataUrlToBytes(q.image), ext=({"image/jpeg":"jpg","image/png":"png","image/webp":"webp","image/gif":"gif"})[d.type]||"img";
+      var name="media/hotspot-"+q.id+"."+ext; zip.file(name,d.bytes); hotspotMap[q.id]=name; files.push(name);
+    });
+  }
+  exportHotspotImages(state.quiz);
+  state.pages.forEach(function(p){ if(p.check) exportHotspotImages(p.check.questions); });
+  zip.file("index.html", playerHTML(courseData(imageMap, videoMap, assetMap, hotspotMap)));
   zip.file("imsmanifest.xml", manifest(files));
   return {zip:zip, files:["imsmanifest.xml"].concat(files)};
 }

@@ -60,15 +60,24 @@ One file: CSS, markup, then one big script in an IIFE. Key areas (search for the
 - **Editor views:** `render()` switches on `sel.type`: `renderSettings`, `renderDesign`, `renderPage`, `renderQuiz`.
 - **Question cards:** `questionCard(q, qi, list, redraw)` is shared by the final quiz and per-page knowledge checks.
   Each question has a `type`: `"mc"` (default, also used for quick true/false — a UI shortcut, not a separate
-  type), `"match"` (`pairs: [{left,right}]`), or `"fill"` (`text` with `___` blanks + `answers: [...]`, matched
-  case-insensitively). `cleanQ(q)` is the single place that shapes a question for export — **a new field on a
-  question type must be added there too, or it's silently dropped from the built course.** The learner-side
-  rendering/grading/wiring for all three types is shared between the final quiz and knowledge checks via
-  `qBody()`, `qWire()`, `qAnswered()` and `qCorrect()` in `PLAYER_JS`. Matching is a drag-and-drop-with-lines
-  UI (SVG lines between left/right items, real pointer drag or click-one-then-the-other, native `<button>`s
-  so Tab + Enter/Space also work): `qWire()`'s `redraw()` is the one place that keeps a connected item's
-  `.connected` class in sync with `picked`, since `qBody()` only bakes classes into the initial HTML string —
-  **a new way of mutating `picked` for match must call `redraw()` after, or the dots/lines go stale.**
+  type), `"match"` (`pairs: [{left,right}]`), `"fill"` (`text` with `___` blanks + `answers: [...]`, matched
+  case-insensitively), or `"hotspot"` (`image`, `imageAlt`, `zones: [{x,y,w,h,correct}]` as 0-100 percentages).
+  `cleanQ(q, hotspotMap)` is the single place that shapes a question for export — **a new field on a question
+  type must be added there too, or it's silently dropped from the built course.** The learner-side
+  rendering/grading/wiring for all four types is shared between the final quiz and knowledge checks via
+  `qBody()`, `qWire()`, `qAnswered()` and `qCorrect()` in `PLAYER_JS`.
+  - Matching is a drag-and-drop-with-lines UI (SVG lines between left/right items, real pointer drag or
+    click-one-then-the-other, native `<button>`s so Tab + Enter/Space also work).
+  - Hotspot is click-the-image, plus an "Or choose an area" list of plain buttons (one per drawn zone) as a
+    keyboard/screen-reader path, since clicking a point on an image has no natural keyboard equivalent.
+    Hotspot images go through their own export path: `buildZip()`'s `exportHotspotImages()` writes each one
+    to `media/hotspot-<question id>.<ext>` (page images and design assets have their own similar, separate
+    paths — there's no single shared "export an image" helper).
+  - **Both `qWire()`'s match `redraw()` and the hotspot click/button handlers directly touch the DOM
+    (toggling `.connected`, moving a `.hs-pick` dot) after calling `setPicked()`, because `qBody()` only bakes
+    classes/markers into the initial HTML string once. A new way of mutating `picked` for either type must do
+    the same, or the UI silently goes stale after the first interaction** (this exact bug was caught and
+    fixed twice while building these two types).
 - **Validation before export:** `problems()`.
 - **Quiz writing:** `buildPrompt(req)` + `writeQuestions(req, signal)`. Routes (in `aiRoute()` order):
   claude.ai `sample` capability → quiz server (`proxyUrl` + `/generate`) → direct API key (testing only).
@@ -188,9 +197,6 @@ Full guide and troubleshooting: `docs/TRUENAS-SETUP.md`.
 
 - Monthly scheduled check of Bridge SCORM docs and browser changes (offered, not set up).
 - cmi5 export if Global ever moves to an LMS that supports it.
-- A hotspot/click-the-image question type - the one question type still not built. It would also need
-  to extend `buildZip()`'s media export pipeline for question images (page images and design assets go
-  through it today; question images don't yet), so it's a bigger, separable change.
 - Block-based page layout (accordion / steps / pull-quote sections) for more design flexibility than the
   current fixed heading+body+image+video page shape - not started, needs a call from Keith on scope first.
 - AI-assisted page text drafting (beyond quiz questions), using the same quiz-server infrastructure.

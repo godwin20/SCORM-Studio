@@ -154,6 +154,34 @@ test("Branching: no branch set keeps the normal next-page behaviour", () => {
   assert.equal(p.heading(), "B", "no branch configured falls through to the normal next page");
 });
 
+test("Hotspot question: choosing the correct area (via the accessible button list) grades correct", () => {
+  const quiz = [{
+    type: "hotspot", q: "Click the fire exit", image: "data:image/png;base64,AA==", imageAlt: "Office floor plan",
+    zones: [{ x: 10, y: 10, w: 20, h: 20, correct: true }, { x: 60, y: 60, w: 20, h: 20, correct: false }],
+    feedback: "",
+  }];
+  const p = play(course({ quiz }), fakeLms("1.2"));
+  p.click("next"); p.click("next");
+  const fs = p.d.querySelectorAll("fieldset.q")[0];
+  fs.querySelector('.hs-alt button[data-zone="0"]').click();
+  p.click("submit");
+  assert.equal(p.d.querySelector(".score").textContent, "100%");
+});
+
+test("Hotspot question: choosing a non-correct area grades incorrect", () => {
+  const quiz = [{
+    type: "hotspot", q: "Click the fire exit", image: "data:image/png;base64,AA==", imageAlt: "",
+    zones: [{ x: 10, y: 10, w: 20, h: 20, correct: true }, { x: 60, y: 60, w: 20, h: 20, correct: false }],
+    feedback: "",
+  }];
+  const p = play(course({ quiz }), fakeLms("1.2"));
+  p.click("next"); p.click("next");
+  const fs = p.d.querySelectorAll("fieldset.q")[0];
+  fs.querySelector('.hs-alt button[data-zone="1"]').click();
+  p.click("submit");
+  assert.equal(p.d.querySelector(".score").textContent, "0%");
+});
+
 test("Knowledge check: practice mode lets learners carry on after a wrong answer", () => {
   const pages = course().pages;
   pages[0].check = { mustPass: false, questions: [{ q: "Pick yes", options: ["no", "yes"], correct: 1, feedback: "" }] };
