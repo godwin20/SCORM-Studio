@@ -62,6 +62,10 @@ To change it: Apps > scorm-studio > Edit, change the line, Save. Change it when 
 
 ## Updating
 
+Get the two files from the project's **[Releases page](https://github.com/godwin20/scorm-studio/releases)**
+(each tagged version has `scorm-studio.html` and `server.js` attached, ready to download) instead of
+waiting for them to be sent. A new release is cut by pushing a tag like `v1.0.1`.
+
 | What changed | What to do |
 | --- | --- |
 | `scorm-studio.html` | Replace the file. No restart; it loads on the next page refresh |

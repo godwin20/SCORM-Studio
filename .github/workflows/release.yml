@@ -1,0 +1,31 @@
+name: Release
+
+# Pushing a tag like v1.0.1 builds the app and attaches the two files Keith
+# needs for a TrueNAS update (see CLAUDE.md's update procedure) to a GitHub
+# Release, so they can be downloaded directly instead of being sent by hand.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - run: node scripts/build.mjs
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/scorm-studio.html
+            server/server.js
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
