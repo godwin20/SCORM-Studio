@@ -64,7 +64,11 @@ One file: CSS, markup, then one big script in an IIFE. Key areas (search for the
   case-insensitively). `cleanQ(q)` is the single place that shapes a question for export — **a new field on a
   question type must be added there too, or it's silently dropped from the built course.** The learner-side
   rendering/grading/wiring for all three types is shared between the final quiz and knowledge checks via
-  `qBody()`, `qWire()`, `qAnswered()` and `qCorrect()` in `PLAYER_JS`.
+  `qBody()`, `qWire()`, `qAnswered()` and `qCorrect()` in `PLAYER_JS`. Matching is a drag-and-drop-with-lines
+  UI (SVG lines between left/right items, real pointer drag or click-one-then-the-other, native `<button>`s
+  so Tab + Enter/Space also work): `qWire()`'s `redraw()` is the one place that keeps a connected item's
+  `.connected` class in sync with `picked`, since `qBody()` only bakes classes into the initial HTML string —
+  **a new way of mutating `picked` for match must call `redraw()` after, or the dots/lines go stale.**
 - **Validation before export:** `problems()`.
 - **Quiz writing:** `buildPrompt(req)` + `writeQuestions(req, signal)`. Routes (in `aiRoute()` order):
   claude.ai `sample` capability → quiz server (`proxyUrl` + `/generate`) → direct API key (testing only).

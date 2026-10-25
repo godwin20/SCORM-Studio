@@ -21,11 +21,15 @@ function play(data, lms) {
       r.checked = true;
       r.dispatchEvent(new dom.window.Event("change"));
     },
-    matchPick: (name, leftIndex, pairIndex) => {
-      const s = d.querySelector(`select[name="${name}-${leftIndex}"]`);
-      assert.ok(s, `match select ${name}-${leftIndex} should exist`);
-      s.value = String(pairIndex);
-      s.dispatchEvent(new dom.window.Event("change"));
+    matchPick: (fieldsetIndex, leftIndex, pairIndex) => {
+      const fs = d.querySelectorAll("fieldset.q")[fieldsetIndex];
+      assert.ok(fs, `fieldset ${fieldsetIndex} should exist`);
+      const l = fs.querySelector(`.match-item[data-side="l"][data-i="${leftIndex}"]`);
+      assert.ok(l, `left match item ${leftIndex} should exist`);
+      const r = fs.querySelector(`.match-item[data-side="r"][data-i="${pairIndex}"]`);
+      assert.ok(r, `right match item ${pairIndex} should exist`);
+      l.click();
+      r.click();
     },
     fillIn: (fieldsetIndex, blankIndex, text) => {
       const fs = d.querySelectorAll("fieldset.q")[fieldsetIndex];
@@ -125,7 +129,7 @@ test("Matching question: graded in the final quiz", () => {
   const quiz = [{ type: "match", q: "Match the term", pairs: [{ left: "Tailgating", right: "Following through a door" }, { left: "Phishing", right: "A fake email" }], feedback: "" }];
   const p = play(course({ quiz }), fakeLms("1.2"));
   p.click("next"); p.click("next");
-  p.matchPick("q0", 0, 0); p.matchPick("q0", 1, 1);
+  p.matchPick(0, 0, 0); p.matchPick(0, 1, 1);
   p.click("submit");
   assert.equal(p.d.querySelector(".score").textContent, "100%");
 });
@@ -134,9 +138,42 @@ test("Matching question: a swapped pair is marked wrong", () => {
   const quiz = [{ type: "match", q: "Match the term", pairs: [{ left: "Tailgating", right: "Following through a door" }, { left: "Phishing", right: "A fake email" }], feedback: "" }];
   const p = play(course({ quiz }), fakeLms("1.2"));
   p.click("next"); p.click("next");
-  p.matchPick("q0", 0, 1); p.matchPick("q0", 1, 0);
+  p.matchPick(0, 0, 1); p.matchPick(0, 1, 0);
   p.click("submit");
   assert.equal(p.d.querySelector(".score").textContent, "0%");
+});
+
+test("Matching question: reconnecting a right item to a different left item clears its old pairing", () => {
+  const quiz = [{ type: "match", q: "Match the term", pairs: [{ left: "Tailgating", right: "Following through a door" }, { left: "Phishing", right: "A fake email" }], feedback: "" }];
+  const p = play(course({ quiz }), fakeLms("1.2"));
+  p.click("next"); p.click("next");
+  const fs = p.d.querySelectorAll("fieldset.q")[0];
+  // both left items point at pair 0's right item; the second click should steal it from the first
+  p.matchPick(0, 0, 0);
+  p.matchPick(0, 1, 0);
+  const left0 = fs.querySelector('.match-item[data-side="l"][data-i="0"]');
+  const left1 = fs.querySelector('.match-item[data-side="l"][data-i="1"]');
+  assert.ok(!left0.classList.contains("connected"), "left 0 lost its connection");
+  assert.ok(left1.classList.contains("connected"), "left 1 now holds the connection");
+  // completing the correct pairing should still grade 100%
+  p.matchPick(0, 0, 0); p.matchPick(0, 1, 1);
+  p.click("submit");
+  assert.equal(p.d.querySelector(".score").textContent, "100%");
+});
+
+test("Matching question: clicking an armed left item again cancels arming without connecting", () => {
+  const quiz = [{ type: "match", q: "Match the term", pairs: [{ left: "Tailgating", right: "Following through a door" }, { left: "Phishing", right: "A fake email" }], feedback: "" }];
+  const p = play(course({ quiz }), fakeLms("1.2"));
+  p.click("next"); p.click("next");
+  const fs = p.d.querySelectorAll("fieldset.q")[0];
+  const left0 = fs.querySelector('.match-item[data-side="l"][data-i="0"]');
+  left0.click();
+  assert.ok(left0.classList.contains("armed"));
+  left0.click();
+  assert.ok(!left0.classList.contains("armed"));
+  const right0 = fs.querySelector('.match-item[data-side="r"][data-i="0"]');
+  right0.click();
+  assert.ok(!left0.classList.contains("connected"), "clicking right with nothing armed does nothing");
 });
 
 test("Fill-in-the-blank: must-pass knowledge check accepts a case-insensitive match, then locks on retry", () => {

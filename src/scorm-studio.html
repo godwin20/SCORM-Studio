@@ -1359,10 +1359,21 @@ var PLAYER_CSS = [
 ".opt{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--line);border-radius:var(--r2);padding:11px 14px;margin:8px 0;cursor:pointer}",
 ".opt:hover{border-color:var(--accent)}.opt input{margin-top:6px;accent-color:var(--accent)}",
 ".opt.right{border-color:var(--ok);background:var(--ok-bg)}.opt.wrong{border-color:var(--bad);background:var(--bad-bg)}",
-".match-row{display:flex;gap:12px;align-items:center;border:1px solid var(--line);border-radius:var(--r2);padding:11px 14px;margin:8px 0}",
-".match-row .match-left{flex:1}",
-".match-row select{font:inherit;padding:6px 10px;border-radius:var(--r2);border:1px solid var(--line);background:var(--card);color:var(--ink)}",
-".match-row.right{border-color:var(--ok);background:var(--ok-bg)}.match-row.wrong{border-color:var(--bad);background:var(--bad-bg)}",
+".match-wrap{margin:8px 0 20px}",
+".match-cols{position:relative;display:flex;justify-content:space-between;gap:36px}",
+".match-col{display:flex;flex-direction:column;gap:10px;flex:1;min-width:0}",
+".match-item{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:var(--r2);padding:10px 14px;margin:0;background:var(--card);color:var(--ink);font:inherit;cursor:pointer;text-align:left;width:100%;touch-action:none}",
+".match-item:hover{border-color:var(--accent)}",
+".match-item .match-text{flex:1}",
+".match-item .dot{width:12px;height:12px;border-radius:50%;background:var(--line);box-shadow:0 0 0 3px var(--card);flex:0 0 auto}",
+".match-item.armed{border-color:var(--accent)}.match-item.armed .dot,.match-item.connected .dot{background:var(--accent)}",
+".match-item.right{border-color:var(--ok);background:var(--ok-bg)}.match-item.right .dot{background:var(--ok)}",
+".match-item.wrong{border-color:var(--bad);background:var(--bad-bg)}.match-item.wrong .dot{background:var(--bad)}",
+".match-item:disabled{cursor:default;opacity:.85}",
+"svg.match-lines{position:absolute;inset:0;pointer-events:none;overflow:visible}",
+"svg.match-lines line{stroke:var(--accent);stroke-width:2}",
+"svg.match-lines line.right{stroke:var(--ok)}svg.match-lines line.wrong{stroke:var(--bad)}svg.match-lines line.drag{stroke-dasharray:4 3}",
+"@media(max-width:520px){.match-cols{gap:14px}.match-item{padding:9px 10px;font-size:.95em}}",
 ".fill-text{font-size:1.05em;line-height:2.4}",
 ".fill-text input.blank{font:inherit;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--ink);margin:0 2px}",
 ".fill-text input.blank.right{border-color:var(--ok);background:var(--ok-bg)}.fill-text input.blank.wrong{border-color:var(--bad);background:var(--bad-bg)}",
@@ -1582,15 +1593,20 @@ function qBody(q, name, picked, locked, showResult, mcOrder){
   var type=q.type||"mc";
   if(type==="match"){
     var p=picked||[], right=shuffle(q.pairs.map(function(pr,pi){ return {t:pr.right, pi:pi}; }));
-    var html="";
-    q.pairs.forEach(function(pr,li){
-      var cls = showResult ? (p[li]===li ? " right" : " wrong") : "";
-      html+='<div class="match-row'+cls+'"><span class="match-left">'+inline(pr.left)+'</span>'+
-        '<select name="'+name+'-'+li+'"'+(locked?' disabled':'')+'><option value="">Choose…</option>'+
-        right.map(function(r){ return '<option value="'+r.pi+'"'+(p[li]===r.pi?' selected':'')+'>'+inline(r.t)+'</option>'; }).join("")+
-        '</select></div>';
-    });
-    return html;
+    var leftHtml = q.pairs.map(function(pr,li){
+      var cls = showResult ? (p[li]===li ? " right" : " wrong") : (p[li]!=null ? " connected" : "");
+      return '<button type="button" class="match-item'+cls+'" data-side="l" data-i="'+li+'"'+(locked?' disabled':'')+
+        '><span class="match-text">'+inline(pr.left)+'</span><span class="dot"></span></button>';
+    }).join("");
+    var rightHtml = right.map(function(r){
+      var li = p.indexOf(r.pi);
+      var cls = showResult ? (li>=0 ? (li===r.pi ? " right" : " wrong") : "") : (li>=0 ? " connected" : "");
+      return '<button type="button" class="match-item'+cls+'" data-side="r" data-i="'+r.pi+'"'+(locked?' disabled':'')+
+        '><span class="dot"></span><span class="match-text">'+inline(r.t)+'</span></button>';
+    }).join("");
+    return '<p class="hint" style="margin:0 0 10px">Drag a line from each item on the left to its match on the right — or click one, then the other.</p>'+
+      '<div class="match-wrap"><div class="match-cols"><div class="match-col">'+leftHtml+'</div>'+
+      '<svg class="match-lines"></svg><div class="match-col">'+rightHtml+'</div></div></div>';
   }
   if(type==="fill"){
     var p=picked||[], parts=String(q.text||"").split(/_{3,}/g), html="<p class=\"fill-text\">";
@@ -1618,11 +1634,87 @@ function qBody(q, name, picked, locked, showResult, mcOrder){
 function qWire(container, name, q, getPicked, setPicked, onChange){
   var type=q.type||"mc";
   if(type==="match"){
-    container.querySelectorAll('select[name^="'+name+'-"]').forEach(function(s){
-      s.onchange=function(){
-        var li=+s.name.slice(name.length+1), arr=(getPicked()||[]).slice();
-        arr[li]= s.value===""?null:+s.value; setPicked(arr); onChange();
-      };
+    var wrap=container.querySelector(".match-wrap"); if(!wrap) return;
+    var cols=wrap.querySelector(".match-cols"), svg=wrap.querySelector("svg.match-lines");
+    var items=wrap.querySelectorAll(".match-item");
+    function dotCenter(btn){
+      var dot=btn.querySelector(".dot"), dr=dot.getBoundingClientRect(), cr=cols.getBoundingClientRect();
+      return { x: dr.left-cr.left+dr.width/2, y: dr.top-cr.top+dr.height/2 };
+    }
+    function redraw(){
+      // This only runs while the question is still interactive (connect() is only reachable
+      // from a non-disabled button), so it's safe to drive "connected" purely off picked state
+      // without touching the right/wrong classes qBody() already baked in for the locked/graded view.
+      var p=getPicked()||[];
+      items.forEach(function(btn){
+        if(btn.disabled) return;
+        var side=btn.dataset.side, i=+btn.dataset.i;
+        var on = side==="l" ? p[i]!=null : p.indexOf(i)>=0;
+        btn.classList.toggle("connected", on);
+      });
+      var cr=cols.getBoundingClientRect();
+      svg.setAttribute("width", cr.width); svg.setAttribute("height", cr.height);
+      var html="";
+      q.pairs.forEach(function(pr,li){
+        if(p[li]==null) return;
+        var lBtn=wrap.querySelector('.match-item[data-side="l"][data-i="'+li+'"]');
+        var rBtn=wrap.querySelector('.match-item[data-side="r"][data-i="'+p[li]+'"]');
+        if(!lBtn||!rBtn) return;
+        var a=dotCenter(lBtn), b=dotCenter(rBtn);
+        html+='<line x1="'+a.x+'" y1="'+a.y+'" x2="'+b.x+'" y2="'+b.y+'" class="'+lBtn.className.replace("match-item","").trim()+'"></line>';
+      });
+      svg.innerHTML=html;
+    }
+    redraw();
+    try{ new (window.ResizeObserver||function(){ this.observe=function(){}; })(redraw).observe(cols); }catch(e){}
+    var armed=null, suppressClick=false;
+    function clearArmed(){ if(armed){ armed.classList.remove("armed"); armed.removeAttribute("aria-pressed"); armed=null; } }
+    function connect(li, pi){
+      var p=(getPicked()||[]).slice();
+      for(var i=0;i<p.length;i++){ if(p[i]===pi && i!==li) p[i]=null; }
+      p[li]=pi; setPicked(p); clearArmed(); redraw(); onChange();
+    }
+    items.forEach(function(btn){
+      if(btn.disabled) return;
+      var side=btn.dataset.side, i=+btn.dataset.i;
+      btn.addEventListener("click", function(){
+        if(suppressClick) return;
+        if(side==="l"){
+          if(armed===btn){ clearArmed(); return; }
+          clearArmed(); btn.classList.add("armed"); btn.setAttribute("aria-pressed","true"); armed=btn;
+        } else if(side==="r" && armed){
+          connect(+armed.dataset.i, i);
+        }
+      });
+      if(side==="l"){
+        btn.addEventListener("pointerdown", function(e){
+          if(e.button!=null && e.button!==0) return;
+          var start=dotCenter(btn);
+          var dragLine=document.createElementNS("http://www.w3.org/2000/svg","line");
+          dragLine.setAttribute("class","drag"); dragLine.setAttribute("x1",start.x); dragLine.setAttribute("y1",start.y);
+          dragLine.setAttribute("x2",start.x); dragLine.setAttribute("y2",start.y);
+          svg.appendChild(dragLine);
+          var moved=false;
+          function onMove(ev){
+            moved=true;
+            var cr=cols.getBoundingClientRect();
+            dragLine.setAttribute("x2", ev.clientX-cr.left); dragLine.setAttribute("y2", ev.clientY-cr.top);
+          }
+          function onUp(ev){
+            document.removeEventListener("pointermove", onMove);
+            document.removeEventListener("pointerup", onUp);
+            try{ dragLine.remove(); }catch(e){}
+            if(moved){
+              suppressClick=true; setTimeout(function(){ suppressClick=false; },0);
+              var target=document.elementFromPoint ? document.elementFromPoint(ev.clientX, ev.clientY) : null;
+              var rBtn=target && target.closest ? target.closest('.match-item[data-side="r"]') : null;
+              if(rBtn && !rBtn.disabled && wrap.contains(rBtn)) connect(i, +rBtn.dataset.i);
+            }
+          }
+          document.addEventListener("pointermove", onMove);
+          document.addEventListener("pointerup", onUp, {once:true});
+        });
+      }
     });
   } else if(type==="fill"){
     container.querySelectorAll('input[data-blank]').forEach(function(inp){
@@ -1679,7 +1771,7 @@ function showCheck(){
       marked.forEach(function(r,qi){ if(!r.ok) picks[qi]=undefined; });
       var keep=marked; marked=null; draw();
       var fs2=app.querySelectorAll("fieldset.q");
-      keep.forEach(function(r,qi){ if(r.ok && fs2[qi]) fs2[qi].querySelectorAll("input,select").forEach(function(x){ x.disabled=true; }); });
+      keep.forEach(function(r,qi){ if(r.ok && fs2[qi]) fs2[qi].querySelectorAll("input,select,button.match-item").forEach(function(x){ x.disabled=true; }); });
     };
     if(b=document.getElementById("kgo")) b.onclick=advance;
     if(b=document.getElementById("kback")) b.onclick=function(){ showPage(); };
