@@ -8,6 +8,11 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version tag to release (e.g. v1.0.0) — created if it doesn't exist yet"
+        required: true
 
 permissions:
   contents: write
@@ -23,6 +28,7 @@ jobs:
       - run: node scripts/build.mjs
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
           files: |
             dist/scorm-studio.html
             server/server.js
