@@ -19,6 +19,8 @@ services:
       LIMIT_PER_DAY: "100"          # quiz requests in total per day
       MAX_QUESTIONS: "15"
       TZ: "Europe/London"
+      # TRUST_PROXY is deliberately left unset here: behind the Cloudflared app the real
+      # visitor IP already arrives as cf-connecting-ip, which the server always trusts.
     ports:
       - "8787:8787"                 # <-- CHANGE the first number if 8787 is already used on your TrueNAS
     volumes:

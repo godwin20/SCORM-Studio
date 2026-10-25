@@ -34,6 +34,7 @@ const LIMIT_PER_DAY = parseInt(process.env.LIMIT_PER_DAY || "100", 10);
 const MAX_QUESTIONS = parseInt(process.env.MAX_QUESTIONS || "15", 10);
 const API_URL = process.env.API_URL || "https://api.anthropic.com/v1/messages"; // only change for testing
 const HTML_FILE = process.env.HTML_FILE || pathMod.join(__dirname, "scorm-studio.html");
+const TRUST_PROXY = process.env.TRUST_PROXY === "1"; // only true behind a reverse proxy that sets x-forwarded-for itself
 const MAX_BODY = 600 * 1024;       // biggest request accepted (course text)
 const MAX_CONTENT = 150000;        // characters of course text sent to Claude
 
@@ -65,6 +66,7 @@ function checkLimits(ip) {
 setInterval(() => { // tidy old entries
   const now = Date.now();
   for (const [ip, list] of perIp) { const keep = list.filter((t) => now - t < 3600000); if (keep.length) perIp.set(ip, keep); else perIp.delete(ip); }
+  for (const [ip, t] of badTries) { if (now - t.first > 900000) badTries.delete(ip); }
 }, 600000).unref();
 
 // failed access-code attempts, to slow down guessing
@@ -174,8 +176,10 @@ function send(res, status, obj) {
 }
 
 function clientIp(req) {
-  // behind Cloudflare Tunnel or a reverse proxy the real address is in a header
-  const h = req.headers["cf-connecting-ip"] || (req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  // cf-connecting-ip only exists behind the real Cloudflare Tunnel, so it's always trusted.
+  // x-forwarded-for is set by any client calling directly, so it's only trusted with TRUST_PROXY=1
+  // (set that only when another reverse proxy you control sits in front and sets it itself).
+  const h = req.headers["cf-connecting-ip"] || (TRUST_PROXY ? (req.headers["x-forwarded-for"] || "").split(",")[0].trim() : "");
   return h || req.socket.remoteAddress || "unknown";
 }
 
@@ -225,6 +229,7 @@ const server = http.createServer((req, res) => {
   const chunks = [];
   let aborted = false;
   req.on("data", (c) => {
+    if (aborted) return;
     size += c.length;
     if (size > MAX_BODY) { aborted = true; send(res, 413, { code: "too_large" }); req.destroy(); return; }
     chunks.push(c);

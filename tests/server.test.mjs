@@ -1,7 +1,7 @@
 // The quiz server, against a fake Claude API.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { startMockClaude, startQuizServer, SAMPLE_QUESTIONS } from "./helpers.mjs";
+import { startMockClaude, startQuizServer, extractFunction, SRC, SERVER, SAMPLE_QUESTIONS } from "./helpers.mjs";
 
 const CODE = "team-code-123";
 let mock, srv;
@@ -73,4 +73,64 @@ test("refuses to start without settings or with a short code", async () => {
 
 test("never logs course content", () => {
   assert.doesNotMatch(srv.log(), /Tailgating is when/);
+});
+
+test("a large body delivered as many TCP chunks does not crash the server", async () => {
+  // Regression guard for a bug where a chunk arriving after the body already went over
+  // MAX_BODY called send() a second time on the same response (res.writeHead twice),
+  // which throws ERR_HTTP_HEADERS_SENT uncaught and kills the process. Whether any given
+  // run actually lands two "data" events on the request after the first abort is a timing
+  // race this test can't force deterministically — so it's a smoke test (server keeps
+  // serving afterwards), not direct proof of the race, and relies on the code guarding
+  // against re-entry (`if (aborted) return;`) rather than on hitting the exact timing.
+  const net = await import("node:net");
+  const bodySize = 8 * 1024 * 1024; // 8 MB, far over the 600 KB cap
+  await new Promise((resolve) => {
+    const socket = net.connect(srv.port, "127.0.0.1", () => {
+      socket.write(
+        "POST /generate HTTP/1.1\r\nHost: localhost\r\nX-Access-Code: " + CODE +
+        "\r\nContent-Type: application/json\r\nContent-Length: " + bodySize +
+        "\r\nConnection: close\r\n\r\n"
+      );
+      socket.write(Buffer.alloc(bodySize, "a"));
+    });
+    socket.on("error", () => {}); // the server destroying the socket mid-write is expected
+    socket.on("close", resolve);
+    setTimeout(resolve, 4000);
+  });
+  assert.equal((await fetch(srv.base + "/ping")).status, 200);
+});
+
+test("x-forwarded-for is ignored unless TRUST_PROXY is set, so it can't be used to dodge the per-person limit", async () => {
+  const srv2 = await startQuizServer({
+    ANTHROPIC_API_KEY: "sk-ant-test", ACCESS_CODE: CODE,
+    API_URL: `http://127.0.0.1:${mock.port}/v1/messages`, LIMIT_PER_HOUR: "2",
+  });
+  try {
+    const postWithXff = (xff) => fetch(srv2.base + "/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Access-Code": CODE, "X-Forwarded-For": xff },
+      body: JSON.stringify({ title: "T", content, count: 1 }),
+    });
+    const statuses = [];
+    for (let i = 0; i < 3; i++) statuses.push((await postWithXff(`10.0.0.${i}`)).status);
+    // all 3 requests come from this test's real loopback socket; a different claimed
+    // x-forwarded-for on each must NOT grant each one its own rate-limit bucket.
+    assert.deepEqual(statuses, [200, 200, 429]);
+  } finally {
+    srv2.child.kill();
+  }
+});
+
+test("buildPrompt in server.js and scorm-studio.html haven't drifted apart", () => {
+  // CLAUDE.md flags this as a manually-kept-in-step duplicate. The two copies are written
+  // in different JS styles (const/arrow in server.js, var/function in the browser file), so
+  // this compares behaviour, not source text.
+  const serverBuildPrompt = extractFunction(SERVER, "buildPrompt");
+  const htmlBuildPrompt = extractFunction(SRC, "buildPrompt");
+  const reqs = [
+    { title: "Door security", content, count: 3, level: "hard", focus: "tailgating", existing: ["Old question?"] },
+    { title: "Plain", content, count: 1, level: "easy" },
+  ];
+  for (const req of reqs) assert.equal(serverBuildPrompt(req), htmlBuildPrompt(req));
 });

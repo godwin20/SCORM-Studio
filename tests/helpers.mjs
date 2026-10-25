@@ -1,5 +1,6 @@
 // Shared test helpers.
 import http from "node:http";
+import vm from "node:vm";
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -93,6 +94,27 @@ export function startQuizServer(env) {
     child.on("exit", (code) => reject(new Error("server exited " + code + ": " + out)));
     setTimeout(() => reject(new Error("server did not start: " + out)), 8000);
   });
+}
+
+/** Pull a top-level `function name(...){...}` declaration's full source out of a file. */
+function extractFunctionSource(filePath, name) {
+  const src = readFileSync(filePath, "utf8");
+  const m = src.match(new RegExp("function\\s+" + name + "\\s*\\([^)]*\\)\\s*\\{"));
+  if (!m) throw new Error(name + " not found in " + filePath);
+  let i = m.index + m[0].length, depth = 1;
+  while (depth > 0 && i < src.length) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}") depth--;
+    i++;
+  }
+  return src.slice(m.index, i);
+}
+
+/** Get a callable `name` function out of a file, isolated from everything else in it. */
+export function extractFunction(filePath, name) {
+  const ctx = vm.createContext({});
+  vm.runInContext(extractFunctionSource(filePath, name), ctx);
+  return ctx[name];
 }
 
 export const SAMPLE_QUESTIONS = [

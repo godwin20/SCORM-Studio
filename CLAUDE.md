@@ -122,13 +122,16 @@ state = {
 
 Plain Node 18+, no packages. Env vars: `ANTHROPIC_API_KEY`, `ACCESS_CODE` (8+ chars), `MODEL`
 (default `claude-sonnet-5-5`), `PORT` (8787), `LIMIT_PER_HOUR` (20 per IP), `LIMIT_PER_DAY` (100 total),
-`MAX_QUESTIONS` (15), `HTML_FILE`, `API_URL` (tests only).
+`MAX_QUESTIONS` (15), `HTML_FILE`, `API_URL` (tests only), `TRUST_PROXY` (0/unset by default).
 
 Routes: `GET /` (page, re-read when the file changes), `GET /ping` (no code), `GET /health` (checks code,
 shows requests left), `POST /generate` (needs `X-Access-Code`), `/favicon.ico` → 204, `HEAD` supported, CORS open.
-Security: constant-time code compare, 15-minute lockout after 10 wrong codes per IP, 600 KB body cap,
-the server builds the prompt itself (no free-form chat), logs counts and tokens only (never course text).
-Real client IP from `cf-connecting-ip` / `x-forwarded-for` (Cloudflare Tunnel).
+Security: constant-time code compare, 15-minute lockout after 10 wrong codes per IP (pruned every 10 min),
+600 KB body cap, the server builds the prompt itself (no free-form chat), logs counts and tokens only
+(never course text).
+Real client IP: `cf-connecting-ip` is always trusted (only set by the real Cloudflare Tunnel). `x-forwarded-for`
+is only trusted when `TRUST_PROXY=1` — it's client-supplied otherwise, so trusting it by default would let
+anyone spoof a different IP per request and dodge the per-person rate limit.
 
 ## Deploying to TrueNAS (Keith's server)
 
