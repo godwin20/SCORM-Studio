@@ -58,6 +58,37 @@ test("SCORM 1.2: pages, quiz pass, score and finish are reported", () => {
   assert.match(lms.data["cmi.core.session_time"], /^\d{4}:\d{2}:\d{2}$/);
 });
 
+test("Page blocks: text, image, quote and key point all render, in order", () => {
+  const pages = [
+    {
+      id: "p0", heading: "Mixed page", check: null,
+      blocks: [
+        { id: "b0", type: "text", body: "Intro paragraph." },
+        { id: "b1", type: "image", image: "data:image/png;base64,AA==", imageAlt: "A diagram", imagePos: "standard" },
+        { id: "b2", type: "quote", text: "Safety first.", cite: "Site policy" },
+        { id: "b3", type: "keypoint", text: "Always badge in.", tone: "warning" },
+      ],
+    },
+  ];
+  const p = play(course({ pages, quiz: [] }), fakeLms("1.2"));
+  const card = p.d.querySelector(".card");
+  assert.match(card.innerHTML, /Intro paragraph/);
+  const img = card.querySelector("img.hero");
+  assert.ok(img, "image block rendered with the hero class");
+  assert.equal(img.getAttribute("alt"), "A diagram");
+  const quote = card.querySelector("blockquote.quote");
+  assert.ok(quote, "quote block rendered");
+  assert.match(quote.textContent, /Safety first/);
+  assert.match(quote.querySelector("cite").textContent, /Site policy/);
+  const key = card.querySelector(".key.k-warning");
+  assert.ok(key, "key point block rendered with its tone class");
+  assert.match(key.textContent, /Always badge in/);
+  // order in the DOM should match block order
+  const order = [...card.querySelectorAll("p, img, blockquote, .key")].map((n) => n.className || n.tagName);
+  assert.ok(order.indexOf("hero") < order.indexOf("quote"), "image comes before quote");
+  assert.ok(order.findIndex((c) => c === "quote") < order.findIndex((c) => /\bkey\b/.test(c)), "quote comes before key point");
+});
+
 test("SCORM 1.2: failing the quiz reports failed", () => {
   const lms = fakeLms("1.2");
   const p = play(course(), lms);
@@ -80,13 +111,13 @@ test("SCORM 2004: required video blocks Next until it ends; embeds render", () =
   const data = course({
     scorm: "2004", quiz: [],
     pages: [
-      { ...course().pages[0], video: { kind: "file", src: "media/v.mp4", type: "video/mp4", required: true } },
-      { ...course().pages[1], video: { kind: "embed", src: "https://www.youtube-nocookie.com/embed/abcdefghijk", site: "YouTube", url: "u" } },
+      { ...course().pages[0], blocks: [{ id: "b0", type: "video", video: { kind: "file", src: "media/v.mp4", type: "video/mp4", required: true } }] },
+      { ...course().pages[1], blocks: [{ id: "b1", type: "video", video: { kind: "embed", src: "https://www.youtube-nocookie.com/embed/abcdefghijk", site: "YouTube", url: "u" } }] },
     ],
   });
   const p = play(data, lms);
   assert.equal(p.d.getElementById("next").disabled, true);
-  p.d.getElementById("vid").dispatchEvent(new p.dom.window.Event("ended"));
+  p.d.getElementById("vid-0").dispatchEvent(new p.dom.window.Event("ended"));
   assert.equal(p.d.getElementById("next").disabled, false);
   p.click("next");
   assert.ok(p.d.querySelector(".vid.embed iframe"));
@@ -119,7 +150,7 @@ test("Knowledge check: must-pass blocks until right, then is skipped on return",
 test("Branching: a failed practice check jumps to the configured remedial page", () => {
   const pages = course().pages;
   pages[0].id = "p0"; pages[1].id = "p1";
-  pages.push({ id: "p2", heading: "Remedial", body: "Review this.", keyPoint: "", callout: "brand", image: null, imageAlt: "", imagePos: "above", video: null, check: null });
+  pages.push({ id: "p2", heading: "Remedial", blocks: [{ id: "b2", type: "text", body: "Review this." }], check: null });
   pages[0].check = { mustPass: false, questions: [{ q: "Pick yes", options: ["no", "yes"], correct: 1, feedback: "" }], branch: { pass: null, fail: "p2" } };
   const p = play(course({ pages, quiz: [] }), fakeLms("1.2"));
   p.click("next"); // page A -> its check
@@ -132,7 +163,7 @@ test("Branching: a failed practice check jumps to the configured remedial page",
 test("Branching: a passed check can jump ahead, skipping the normal next page", () => {
   const pages = course().pages;
   pages[0].id = "p0"; pages[1].id = "p1";
-  pages.push({ id: "p2", heading: "Skip target", body: "You knew it already.", keyPoint: "", callout: "brand", image: null, imageAlt: "", imagePos: "above", video: null, check: null });
+  pages.push({ id: "p2", heading: "Skip target", blocks: [{ id: "b2", type: "text", body: "You knew it already." }], check: null });
   pages[0].check = { mustPass: false, questions: [{ q: "Pick yes", options: ["no", "yes"], correct: 1, feedback: "" }], branch: { pass: "p2", fail: null } };
   const p = play(course({ pages, quiz: [] }), fakeLms("1.2"));
   p.click("next");

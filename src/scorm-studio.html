@@ -318,12 +318,34 @@ function ensureDesign(s){
   if(!FONTS[cur.headingFont]) cur.headingFont="system";
   if(!FONTS[cur.bodyFont]) cur.bodyFont="system";
   s.design=cur; s.accent=cur.accent;
-  (s.pages||[]).forEach(function(p){ if(!p.imagePos) p.imagePos="above"; if(!p.callout) p.callout="brand"; });
+  (s.pages||[]).forEach(migratePageToBlocks);
   if(s.showBadge===undefined) s.showBadge=true;
   function ensureQType(q){ if(!q.type) q.type="mc"; }
   (s.quiz||[]).forEach(ensureQType);
   (s.pages||[]).forEach(function(p){ if(p.check) (p.check.questions||[]).forEach(ensureQType); });
   return s;
+}
+// A page used to be one fixed heading+body+image+video+keyPoint shape. Pages are now a heading
+// plus an ordered list of typed blocks (text/image/video/quote/keypoint), for more layout freedom.
+// This converts anything still in the old shape, once, the first time it's loaded.
+function migratePageToBlocks(p){
+  if(p.blocks) return;
+  var blocks=[];
+  var imgBlock = p.image ? {id:uid("b"), type:"image", image:p.image, imageAlt:p.imageAlt||"", imagePos: p.imagePos==="banner"?"banner":"standard"} : null;
+  var textBlock = (p.body && p.body.trim()) ? {id:uid("b"), type:"text", body:p.body} : null;
+  if(imgBlock && p.imagePos==="below"){
+    if(textBlock) blocks.push(textBlock);
+    blocks.push(imgBlock);
+  } else {
+    // above, left, right, banner (or no body): image first. left/right had no text-wrap equivalent
+    // in a block stack, so they're approximated as image-then-text, same as above/banner.
+    if(imgBlock) blocks.push(imgBlock);
+    if(textBlock) blocks.push(textBlock);
+  }
+  if(p.keyPoint && p.keyPoint.trim()) blocks.push({id:uid("b"), type:"keypoint", text:p.keyPoint, tone:p.callout||"brand"});
+  if(p.video) blocks.push({id:uid("b"), type:"video", video:p.video});
+  p.blocks=blocks;
+  delete p.body; delete p.image; delete p.imageAlt; delete p.imagePos; delete p.keyPoint; delete p.callout; delete p.video;
 }
 function hexToRgb(h){ var m=String(h||"").replace("#","").match(/^([0-9a-f]{6})$/i); if(!m) return [0,0,0]; var n=parseInt(m[1],16); return [n>>16&255,n>>8&255,n&255]; }
 function luminance(h){ return hexToRgb(h).map(function(v){ v/=255; return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4); }).reduce(function(a,v,i){ return a+v*[0.2126,0.7152,0.0722][i]; },0); }
@@ -364,14 +386,26 @@ var idb = (function(){
     del:function(k){ return tx("readwrite",function(s){ return s.delete(k); }); }
   };
 })();
+function videoBlocksOf(p){ return (p.blocks||[]).filter(function(b){ return b.type==="video" && b.video; }); }
+// Like videoBlocksOf, but also understands a page that hasn't been through migratePageToBlocks yet
+// (e.g. a .scorm-project.zip saved by an older version, mid-way through being opened).
+function pageVideosRaw(p){
+  if(Array.isArray(p.blocks)) return videoBlocksOf(p).map(function(b){ return b.video; });
+  return p.video ? [p.video] : [];
+}
+function allVideos(){
+  var out=[];
+  state.pages.forEach(function(p){ videoBlocksOf(p).forEach(function(b){ out.push(b.video); }); });
+  return out;
+}
 function restoreVideos(){
-  var keys = state.pages.filter(function(p){ return p.video && p.video.kind==="file" && !videoStore[p.video.key]; }).map(function(p){ return p.video.key; });
+  var keys = allVideos().filter(function(v){ return v.kind==="file" && !videoStore[v.key]; }).map(function(v){ return v.key; });
   if(!keys.length) return;
   Promise.all(keys.map(function(k){ return idb.get(k).then(function(b){ if(b) videoStore[k]=b; }); })).then(function(){ render(); });
 }
 function forgetVideo(key){
   if(!key) return;
-  var used = state.pages.some(function(p){ return p.video && p.video.key===key; });
+  var used = allVideos().some(function(v){ return v.key===key; });
   if(!used){ delete videoStore[key]; idb.del(key); }
 }
 function parseVideoLink(u){
@@ -404,7 +438,7 @@ function renderStrip(){
     '<span>Package <b>SCORM '+(state.scorm==="2004"?"2004 4th ed.":"1.2")+'</b></span>'+
     '<span>Pages <b>'+state.pages.length+'</b></span>'+
     '<span>Knowledge checks <b>'+state.pages.filter(function(p){ return p.check && p.check.on && p.check.questions.length; }).length+'</b></span>'+
-    '<span>Videos <b>'+state.pages.filter(function(p){ return p.video; }).length+'</b></span>'+
+    '<span>Videos <b>'+state.pages.filter(function(p){ return videoBlocksOf(p).length; }).length+'</b></span>'+
     '<span>Questions <b>'+q+'</b></span>'+
     '<span>'+(q?'Pass mark <b>'+state.passMark+'%</b>':'Completes when <b>last page viewed</b>')+'</span>';
 }
@@ -611,8 +645,64 @@ function renderDesign(ed){
   sync(); draw();
 }
 
+var BLOCK_TYPES = [["text","Text"],["image","Image"],["video","Video"],["quote","Quote"],["keypoint","Key point"]];
+function blockTypeLabel(type){ var m=BLOCK_TYPES.filter(function(t){ return t[0]===type; })[0]; return m?m[1]:type; }
+function newBlock(type){
+  var id=uid("b");
+  if(type==="image") return {id:id, type:"image", image:null, imageAlt:"", imagePos:"standard"};
+  if(type==="video") return {id:id, type:"video", video:null};
+  if(type==="quote") return {id:id, type:"quote", text:"", cite:""};
+  if(type==="keypoint") return {id:id, type:"keypoint", text:"", tone:"brand"};
+  return {id:id, type:"text", body:""};
+}
+function blockEditor(b, p, redraw){
+  var c=el('<div class="q"></div>');
+  c.innerHTML=
+   '<div class="q-top"><span class="eyebrow">'+blockTypeLabel(b.type)+'</span>'+
+   '<button class="btn small" type="button" data-a="up" aria-label="Move block up">↑</button>'+
+   '<button class="btn small" type="button" data-a="down" aria-label="Move block down">↓</button>'+
+   '<button class="btn small danger" type="button" data-a="del">Delete</button></div>'+
+   '<div id="bb-'+b.id+'"></div>';
+  var box=c.querySelector("#bb-"+b.id);
+  if(b.type==="text"){
+    box.appendChild(el('<label class="f"><span>Content <span class="hint">Blank line = new paragraph · start a line with "- " for a bullet · **bold**</span></span><textarea></textarea></label>'));
+    var ta=box.querySelector("textarea"); ta.value=b.body||""; ta.addEventListener("input",function(){ b.body=ta.value; touched(); });
+  } else if(b.type==="image"){
+    var imgBox=el('<div class="img-box"></div>'); box.appendChild(imgBox); renderImgBox(imgBox, b);
+  } else if(b.type==="video"){
+    var vidBox=el('<div class="img-box"></div>'); box.appendChild(vidBox); renderVideoBox(vidBox, b);
+  } else if(b.type==="quote"){
+    box.appendChild(el('<label class="f"><span>Quote</span><textarea class="short"></textarea></label>'));
+    box.appendChild(el('<label class="f"><span>Attribution <span class="hint">optional</span></span><input type="text"></label>'));
+    var qt=box.querySelector("textarea"), ci=box.querySelector("input");
+    qt.value=b.text||""; qt.addEventListener("input",function(){ b.text=qt.value; touched(); });
+    ci.value=b.cite||""; ci.addEventListener("input",function(){ b.cite=ci.value; touched(); });
+  } else if(b.type==="keypoint"){
+    box.appendChild(el('<label class="f"><span>Key point</span><input type="text"></label>'));
+    box.appendChild(el('<label class="f"><span>Style</span><select>'+
+      '<option value="brand">Brand colour</option><option value="info">Information (blue)</option><option value="warning">Warning (amber)</option><option value="success">Good practice (green)</option><option value="danger">Important (red)</option>'+
+      '</select></label>'));
+    var inp=box.querySelector("input"), sel=box.querySelector("select");
+    inp.value=b.text||""; inp.addEventListener("input",function(){ b.text=inp.value; touched(); });
+    sel.value=b.tone||"brand"; sel.addEventListener("change",function(){ b.tone=sel.value; touched(); });
+  }
+  c.addEventListener("click",function(e){
+    var a=e.target.closest("[data-a]"); if(!a) return;
+    var arr=p.blocks, bi=arr.indexOf(b);
+    if(a.dataset.a==="up" && bi>0){ arr.splice(bi-1,0,arr.splice(bi,1)[0]); touched(); redraw(); }
+    else if(a.dataset.a==="down" && bi<arr.length-1){ arr.splice(bi+1,0,arr.splice(bi,1)[0]); touched(); redraw(); }
+    else if(a.dataset.a==="del"){
+      if(a.dataset.armed){
+        if(b.type==="video" && b.video && b.video.kind==="file") forgetVideo(b.video.key);
+        arr.splice(bi,1); touched(); redraw();
+      } else { a.dataset.armed="1"; a.textContent="Confirm delete"; setTimeout(function(){ delete a.dataset.armed; a.textContent="Delete"; },3500); }
+    }
+  });
+  return c;
+}
 function renderPage(ed){
   var i=sel.idx, p=state.pages[i]; if(!p){ sel={type:"settings",idx:0}; return render(); }
+  if(!p.blocks) p.blocks=[];
   ed.innerHTML =
   '<div class="panel-head"><div><span class="eyebrow">Page '+(i+1)+' of '+state.pages.length+'</span><h2 id="pg-title"></h2></div>'+
     '<button class="btn small" type="button" id="pg-up" aria-label="Move page up">↑</button>'+
@@ -621,16 +711,10 @@ function renderPage(ed){
     '<button class="btn small danger" type="button" id="pg-del">Delete</button></div>'+
   '<div class="fields">'+
     '<label class="f"><span>Heading</span><input type="text" id="pg-heading"></label>'+
-    '<label class="f"><span>Content <span class="hint">Blank line = new paragraph · start a line with "- " for a bullet · **bold**</span></span><textarea id="pg-body"></textarea></label>'+
-    '<div class="f" style="display:grid;gap:6px"><span style="font-weight:600;font-size:13.5px">Video <span class="hint">optional · shown above the text</span></span>'+
-      '<div class="img-box" id="pg-vidbox"></div></div>'+
-    '<div class="f" style="display:grid;gap:6px"><span style="font-weight:600;font-size:13.5px">Image <span class="hint">optional · large photos are resized to keep the package small</span></span>'+
-      '<div class="img-box" id="pg-imgbox"></div></div>'+
-    '<div class="row2">'+
-      '<label class="f"><span>Key point <span class="hint">optional · shown in a highlighted box</span></span><input type="text" id="pg-key"></label>'+
-      '<label class="f"><span>Key point style</span><select id="pg-callout">'+
-        '<option value="brand">Brand colour</option><option value="info">Information (blue)</option><option value="warning">Warning (amber)</option><option value="success">Good practice (green)</option><option value="danger">Important (red)</option>'+
-      '</select></label>'+
+    '<div class="qlist" id="pg-blocks"></div>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">'+
+      '<span style="font-weight:600;font-size:13.5px">Add:</span>'+
+      BLOCK_TYPES.map(function(t){ return '<button class="btn small" type="button" data-addblock="'+t[0]+'">+ '+t[1]+'</button>'; }).join("")+
     '</div>'+
     '<section class="kc" id="pg-check"></section>'+
   '</div>';
@@ -638,11 +722,16 @@ function renderPage(ed){
   var title=ed.querySelector("#pg-title"); title.textContent=p.heading||"Untitled page";
   var h=ed.querySelector("#pg-heading"); h.value=p.heading;
   h.addEventListener("input",function(){ p.heading=h.value; title.textContent=h.value||"Untitled page"; touched(); renderNav(); });
-  var b=ed.querySelector("#pg-body"); b.value=p.body; b.addEventListener("input",function(){ p.body=b.value; touched(); });
-  var k=ed.querySelector("#pg-key"); k.value=p.keyPoint||""; k.addEventListener("input",function(){ p.keyPoint=k.value; touched(); });
-  var co=ed.querySelector("#pg-callout"); co.value=p.callout||"brand"; co.addEventListener("change",function(){ p.callout=co.value; touched(); });
-  renderImgBox(ed.querySelector("#pg-imgbox"), p);
-  renderVideoBox(ed.querySelector("#pg-vidbox"), p);
+  var blockList=ed.querySelector("#pg-blocks");
+  function drawBlocks(){
+    blockList.innerHTML="";
+    if(!p.blocks.length) blockList.appendChild(el('<div class="issues">No content blocks yet. Add one below.</div>'));
+    p.blocks.forEach(function(b){ blockList.appendChild(blockEditor(b, p, drawBlocks)); });
+  }
+  drawBlocks();
+  ed.querySelectorAll("[data-addblock]").forEach(function(btn){
+    btn.addEventListener("click",function(){ p.blocks.push(newBlock(btn.dataset.addblock)); touched(); drawBlocks(); });
+  });
   ed.querySelector("#pg-up").disabled = i===0;
   ed.querySelector("#pg-down").disabled = i===state.pages.length-1;
   ed.querySelector("#pg-up").addEventListener("click",function(){ move(i,-1); });
@@ -650,22 +739,31 @@ function renderPage(ed){
   ed.querySelector("#pg-dup").addEventListener("click",function(){
     var c=JSON.parse(JSON.stringify(p)); c.id=uid("p"); c.heading=(p.heading||"Page")+" (copy)";
     if(c.check) c.check.questions.forEach(function(q){ q.id=uid("k"); });
-    if(c.video && c.video.kind==="file"){ var nk=uid("v"); var blob=videoStore[p.video.key]; c.video.key=nk; if(blob){ videoStore[nk]=blob; idb.put(nk,blob); } }
+    c.blocks.forEach(function(b, bi){
+      b.id=uid("b");
+      if(b.type==="video" && b.video && b.video.kind==="file"){
+        var origVideo=p.blocks[bi].video, blob=origVideo && videoStore[origVideo.key];
+        var nk=uid("v"); b.video.key=nk; if(blob){ videoStore[nk]=blob; idb.put(nk,blob); }
+      }
+    });
     state.pages.splice(i+1,0,c); sel.idx=i+1; touched(); render();
   });
   var del=ed.querySelector("#pg-del"), armed=false;
   del.addEventListener("click",function(){
     if(state.pages.length===1){ toast("A course needs at least one page"); return; }
     if(!armed){ armed=true; del.textContent="Confirm delete"; setTimeout(function(){ armed=false; del.textContent="Delete"; },3500); return; }
-    var gone=state.pages.splice(i,1)[0]; if(gone.video && gone.video.kind==="file") forgetVideo(gone.video.key);
+    var gone=state.pages.splice(i,1)[0]; videoBlocksOf(gone).forEach(function(b){ if(b.video.kind==="file") forgetVideo(b.video.key); });
     sel.idx=Math.max(0,i-1); touched(); render(); toast("Page deleted");
   });
 }
 function pageText(p, i){
   var parts=["## Page "+(i+1)+": "+(p.heading||"Untitled")];
-  if(p.body) parts.push(p.body.replace(/\*\*/g,""));
-  if(p.keyPoint) parts.push("Key point: "+p.keyPoint);
-  if(p.image && p.imageAlt) parts.push("Picture shows: "+p.imageAlt);
+  (p.blocks||[]).forEach(function(b){
+    if(b.type==="text" && b.body) parts.push(b.body.replace(/\*\*/g,""));
+    else if(b.type==="quote" && b.text) parts.push("Quote: "+b.text+(b.cite?" — "+b.cite:""));
+    else if(b.type==="keypoint" && b.text) parts.push("Key point: "+b.text);
+    else if(b.type==="image" && b.imageAlt) parts.push("Picture shows: "+b.imageAlt);
+  });
   return parts.join("\n");
 }
 function renderCheck(box, p, pageIdx){
@@ -744,18 +842,17 @@ function renderImgBox(box,p){
   if(p.image){
     var img=el('<img alt="">'); img.src=p.image; box.appendChild(img);
     var col=el('<div style="display:grid;gap:8px;flex:1;min-width:180px"></div>');
-    col.appendChild(el('<label class="f"><span>Alt text <span class="hint">describes the image for screen readers</span></span><input type="text" id="pg-alt"></label>'));
-    col.appendChild(el('<label class="f"><span>Position</span><select id="pg-imgpos">'+
-      '<option value="above">Above the text</option><option value="below">Below the text</option>'+
-      '<option value="left">Left of the text</option><option value="right">Right of the text</option>'+
-      '<option value="banner">Full-width banner at the top</option></select></label>'));
+    col.appendChild(el('<label class="f"><span>Alt text <span class="hint">describes the image for screen readers</span></span><input type="text"></label>'));
+    col.appendChild(el('<label class="f"><span>Size</span><select>'+
+      '<option value="standard">Standard</option>'+
+      '<option value="banner">Full-width banner</option></select></label>'));
     var rm=el('<button class="btn small danger" type="button" style="justify-self:start">Remove image</button>');
     col.appendChild(rm); box.appendChild(col);
-    var alt=col.querySelector("#pg-alt"); alt.value=p.imageAlt||""; alt.addEventListener("input",function(){ p.imageAlt=alt.value; touched(); });
-    var pos=col.querySelector("#pg-imgpos"); pos.value=p.imagePos||"above"; pos.addEventListener("change",function(){ p.imagePos=pos.value; touched(); });
+    var alt=col.querySelector("input"); alt.value=p.imageAlt||""; alt.addEventListener("input",function(){ p.imageAlt=alt.value; touched(); });
+    var pos=col.querySelector("select"); pos.value=p.imagePos||"standard"; pos.addEventListener("change",function(){ p.imagePos=pos.value; touched(); });
     rm.addEventListener("click",function(){ p.image=null; touched(); renderImgBox(box,p); });
   } else {
-    var lab=el('<label class="btn small">Choose image…<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden id="pg-img"></label>');
+    var lab=el('<label class="btn small">Choose image…<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden></label>');
     box.appendChild(lab); box.appendChild(el('<span class="hint">PNG, JPG, WebP or GIF</span>'));
     lab.querySelector("input").addEventListener("change",function(e){
       var f=e.target.files[0]; if(!f) return;
@@ -768,7 +865,7 @@ function renderVideoBox(box,p){
   var v=p.video;
   if(!v){
     var up=el('<label class="btn small">Upload video…<input type="file" accept="video/mp4,video/webm,video/quicktime,.mp4,.m4v,.webm,.mov" hidden></label>');
-    var link=el('<div class="link-row"><input type="text" placeholder="or paste a YouTube or Vimeo link" aria-label="Video link" id="pg-vlink"><button class="btn small" type="button">Add link</button></div>');
+    var link=el('<div class="link-row"><input type="text" placeholder="or paste a YouTube or Vimeo link" aria-label="Video link"><button class="btn small" type="button">Add link</button></div>');
     box.appendChild(up); box.appendChild(link);
     box.appendChild(el('<span class="hint" style="flex-basis:100%">Uploaded videos go inside the SCORM package and play offline. MP4 plays in every browser. Links need internet access and Bridge cannot tell whether they were watched.</span>'));
     up.querySelector("input").addEventListener("change",function(e){
@@ -1002,13 +1099,7 @@ var gen = {count:5, level:"mixed", focus:"", busy:false, results:null, error:"",
 var samplePromise=null;
 function getSample(){ if(!samplePromise){ samplePromise = (window.claude && window.claude.use) ? window.claude.use("sample").catch(function(){ return null; }) : Promise.resolve(null); } return samplePromise; }
 function courseText(){
-  return state.pages.map(function(p,i){
-    var parts=["## Page "+(i+1)+": "+(p.heading||"Untitled")];
-    if(p.body) parts.push(p.body.replace(/\*\*/g,""));
-    if(p.keyPoint) parts.push("Key point: "+p.keyPoint);
-    if(p.image && p.imageAlt) parts.push("Picture shows: "+p.imageAlt);
-    return parts.join("\n");
-  }).join("\n\n");
+  return state.pages.map(function(p,i){ return pageText(p,i); }).join("\n\n");
 }
 function shuffleArr(a){ a=a.slice(); for(var i=a.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
 function cleanGenerated(raw){
@@ -1309,8 +1400,8 @@ function problems(){
   if(!state.title.trim()) out.push("Give the course a title (Settings).");
   if(!state.pages.length) out.push("Add at least one page.");
   state.pages.forEach(function(p,i){
-    if(!p.heading.trim() && !p.body.trim() && !p.image && !p.video) out.push("Page "+(i+1)+" is empty.");
-    if(p.video && p.video.kind==="file" && !videoStore[p.video.key]) out.push("Page "+(i+1)+": re-attach the video file \""+p.video.name+"\".");
+    if(!p.heading.trim() && !(p.blocks||[]).length) out.push("Page "+(i+1)+" is empty.");
+    videoBlocksOf(p).forEach(function(b){ if(b.video.kind==="file" && !videoStore[b.video.key]) out.push("Page "+(i+1)+": re-attach the video file \""+b.video.name+"\"."); });
   });
   function checkQ(q,label){
     if(!q.q.trim()) out.push(label+" has no question text.");
@@ -1346,10 +1437,10 @@ function problems(){
 }
 
 /* ---------- learner player (goes inside the package as index.html) ---------- */
-function videoData(p,i,videoMap){
-  var v=p.video; if(!v) return null;
+function videoData(b,videoMap){
+  var v=b.video; if(!v) return null;
   if(v.kind==="file"){
-    var src = videoMap ? videoMap[i] : (videoStore[v.key] ? URL.createObjectURL(videoStore[v.key]) : "");
+    var src = videoMap ? videoMap[b.id] : (videoStore[v.key] ? URL.createObjectURL(videoStore[v.key]) : "");
     return {kind:"file", src:src, type:v.type, required:!!v.required};
   }
   return {kind:v.kind, src:v.src, url:v.url, site:v.site, required: v.kind==="remote" && !!v.required};
@@ -1386,7 +1477,14 @@ function courseData(imageMap, videoMap, assetMap, hotspotMap){
     pages:state.pages.map(function(p,i){
       var br=p.check&&p.check.branch;
       var chk = (p.check && p.check.on && p.check.questions.length) ? {mustPass:p.check.mustPass!==false, questions:p.check.questions.map(function(q){ return cleanQ(q,hotspotMap); }), branch:{pass:(br&&br.pass)||null, fail:(br&&br.fail)||null}} : null;
-      return {id:p.id, heading:p.heading, body:p.body, keyPoint:p.keyPoint||"", callout:p.callout||"brand", image:p.image ? (imageMap?imageMap[i]:p.image) : null, imageAlt:p.imageAlt||"", imagePos:p.imagePos||"above", video:videoData(p,i,videoMap), check:chk};
+      var blocks=(p.blocks||[]).map(function(b){
+        if(b.type==="image") return {type:"image", image: b.image ? (imageMap?imageMap[b.id]:b.image) : null, imageAlt:b.imageAlt||"", imagePos:b.imagePos||"standard"};
+        if(b.type==="video") return {type:"video", video: videoData(b, videoMap)};
+        if(b.type==="quote") return {type:"quote", text:b.text||"", cite:b.cite||""};
+        if(b.type==="keypoint") return {type:"keypoint", text:b.text||"", tone:b.tone||"brand"};
+        return {type:"text", body:b.body||""};
+      });
+      return {id:p.id, heading:p.heading, blocks:blocks, check:chk};
     }),
     quiz:state.quiz.map(function(q){ return cleanQ(q,hotspotMap); })
   };
@@ -1456,6 +1554,8 @@ var PLAYER_CSS = [
 ".vph a{color:#fff}",
 ".vnote{font-size:14px;color:var(--muted);margin:-10px 0 18px}.vnote.ok{color:var(--ok)}",
 ".key{border-left:4px solid var(--accent);padding:12px 16px;border-radius:0 var(--r2) var(--r2) 0;margin-top:20px;font-weight:600}",
+".quote{margin:0 0 20px;padding:4px 0 4px 18px;border-left:3px solid var(--line);font-size:1.1em;font-style:italic;color:var(--muted)}",
+".quote cite{display:block;margin-top:6px;font-size:.78em;font-style:normal;font-weight:600;color:var(--ink)}",
 "footer{background:var(--card);border-top:1px solid var(--line);padding:12px 20px}",
 ".ft{max-width:var(--maxw);margin:0 auto;display:flex;justify-content:space-between;gap:12px}",
 "button{font:inherit;font-size:16px;border-radius:var(--r2);padding:10px 20px;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink)}",
@@ -1598,14 +1698,23 @@ function rich(text){
   });
   return out;
 }
-function videoHTML(v, mustWatch){
+function videoHTML(v, bi){
   if(!v || !v.src) return "";
   if(v.kind==="embed"){
     if(C.preview) return '<div class="vid"><div class="vph"><strong>'+esc(v.site)+' video</strong><span>Plays here once the course is in Bridge.</span><a href="'+esc(v.url)+'" target="_blank" rel="noopener">Open the video</a></div></div>';
     return '<div class="vid embed"><iframe src="'+esc(v.src)+'" title="'+esc(v.site)+' video" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen></iframe></div>';
   }
-  return '<div class="vid"><video id="vid" controls playsinline preload="metadata"><source src="'+esc(v.src)+'"'+(v.type?' type="'+esc(v.type)+'"':'')+'>Your browser cannot play this video.</video></div>'+
-    (mustWatch?'<p class="vnote" id="vnote">Watch the video to the end to continue.</p>':'');
+  var mustWatch = v.required;
+  return '<div class="vid"><video id="vid-'+bi+'" controls playsinline preload="metadata"><source src="'+esc(v.src)+'"'+(v.type?' type="'+esc(v.type)+'"':'')+'>Your browser cannot play this video.</video></div>'+
+    (mustWatch?'<p class="vnote" id="vnote-'+bi+'">Watch the video to the end to continue.</p>':'');
+}
+function blockHTML(b, bi){
+  if(b.type==="text") return rich(b.body);
+  if(b.type==="image") return b.image ? '<img src="'+esc(b.image)+'" alt="'+esc(b.imageAlt||"")+'" class="'+(b.imagePos==="banner"?"banner":"hero")+'">' : "";
+  if(b.type==="video") return videoHTML(b.video, bi);
+  if(b.type==="quote") return b.text ? '<blockquote class="quote">'+inline(b.text)+(b.cite?'<cite>'+inline(b.cite)+'</cite>':'')+'</blockquote>' : "";
+  if(b.type==="keypoint") return b.text ? '<div class="key k-'+esc(b.tone||"brand")+'">'+inline(b.text)+'</div>' : "";
+  return "";
 }
 function shuffle(a){ a=a.slice(); for(var i=a.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
 
@@ -1643,35 +1752,34 @@ function shell(inner, foot){
 function showPage(){
   if(visited.indexOf(page)<0) visited.push(page);
   var p=C.pages[page], last = page===C.pages.length-1;
-  var v = p.video, mustWatch = !!(v && v.required && v.kind!=="embed" && watched.indexOf(page)<0);
+  var blocks = p.blocks||[];
+  var requiredVideos=[]; // {bi, block}
+  blocks.forEach(function(b,bi){ if(b.type==="video" && b.video && b.video.required && b.video.kind!=="embed") requiredVideos.push({bi:bi, video:b.video}); });
+  var mustWatch = requiredVideos.length>0 && watched.indexOf(page)<0;
   onCover=false;
-  var pos=p.imagePos||"above", img=p.image ? '<img src="'+esc(p.image)+'" alt="'+esc(p.imageAlt)+'"' : "";
-  var text=rich(p.body), main;
-  if(img && (pos==="left"||pos==="right")) main='<div class="split '+pos+'">'+img+'><div>'+text+'</div></div>';
-  else if(img && pos==="below") main=text+img+' class="hero below">';
-  else if(img && pos==="above") main=img+' class="hero">'+text;
-  else main=text;
-  var body = (img && pos==="banner" ? img+' class="banner">' : '') +
+  var body =
     (page===0 && C.description && !(C.design && C.design.cover) ? '<p class="muted">'+inline(C.description)+'</p>' : '') +
     '<h2>'+inline(p.heading)+'</h2>'+
-    videoHTML(v, mustWatch)+
-    main+
-    (p.keyPoint?'<div class="key k-'+esc(p.callout||"brand")+'">'+inline(p.keyPoint)+'</div>':'');
+    blocks.map(function(b,bi){ return blockHTML(b,bi); }).join("");
   var nextLabel = last ? (HAS_QUIZ ? "Start quiz" : "Finish") : "Next";
   shell(body, '<button id="back" '+(page===0?'disabled':'')+'>Back</button><button class="go" id="next">'+nextLabel+'</button>');
   var nextBtn=document.getElementById("next");
   if(mustWatch){
     nextBtn.disabled=true;
-    var vid=document.getElementById("vid"), note=document.getElementById("vnote");
-    var done=function(){
-      if(watched.indexOf(page)<0){ watched.push(page); save(); }
-      nextBtn.disabled=false; if(note){ note.textContent="Video complete. You can continue."; note.className="vnote ok"; }
-    };
-    if(vid){
-      vid.addEventListener("ended",done);
-      vid.addEventListener("timeupdate",function(){ if(vid.duration && vid.currentTime>=vid.duration-0.75) done(); });
-      vid.addEventListener("error",function(){ nextBtn.disabled=false; if(note) note.textContent="The video could not be played. You can continue."; });
-    } else nextBtn.disabled=false;
+    var remaining=requiredVideos.length;
+    requiredVideos.forEach(function(rv){
+      var finished=false, vid=document.getElementById("vid-"+rv.bi), note=document.getElementById("vnote-"+rv.bi);
+      function done(){
+        if(finished) return; finished=true; remaining--;
+        if(note){ note.textContent="Video complete. You can continue."; note.className="vnote ok"; }
+        if(remaining<=0){ if(watched.indexOf(page)<0){ watched.push(page); save(); } nextBtn.disabled=false; }
+      }
+      if(vid){
+        vid.addEventListener("ended",done);
+        vid.addEventListener("timeupdate",function(){ if(vid.duration && vid.currentTime>=vid.duration-0.75) done(); });
+        vid.addEventListener("error",function(){ if(note) note.textContent="The video could not be played."; done(); });
+      } else done();
+    });
   }
   document.getElementById("back").onclick=function(){ if(page===0 && C.design && C.design.cover){ showCover(); return; } page--; save(); showPage(); };
   if(page===0 && C.design && C.design.cover) document.getElementById("back").disabled=false;
@@ -2080,14 +2188,16 @@ function dataUrlToBytes(u){
 function buildZip(){
   var zip=new JSZip(), imageMap={}, videoMap={}, files=["index.html"];
   state.pages.forEach(function(p,i){
-    if(p.image){
-      var d=dataUrlToBytes(p.image); var ext=({"image/jpeg":"jpg","image/png":"png","image/webp":"webp","image/gif":"gif"})[d.type]||"img";
-      var name="media/page-"+(i+1)+"."+ext; zip.file(name,d.bytes); imageMap[i]=name; files.push(name);
-    }
-    if(p.video && p.video.kind==="file" && videoStore[p.video.key]){
-      var vn="media/page-"+(i+1)+"-video."+videoExt(p.video);
-      zip.file(vn, videoStore[p.video.key], {compression:"STORE"}); videoMap[i]=vn; files.push(vn);
-    }
+    (p.blocks||[]).forEach(function(b,bi){
+      if(b.type==="image" && b.image){
+        var d=dataUrlToBytes(b.image); var ext=({"image/jpeg":"jpg","image/png":"png","image/webp":"webp","image/gif":"gif"})[d.type]||"img";
+        var name="media/page-"+(i+1)+"-"+(bi+1)+"."+ext; zip.file(name,d.bytes); imageMap[b.id]=name; files.push(name);
+      }
+      if(b.type==="video" && b.video && b.video.kind==="file" && videoStore[b.video.key]){
+        var vn="media/page-"+(i+1)+"-"+(bi+1)+"-video."+videoExt(b.video);
+        zip.file(vn, videoStore[b.video.key], {compression:"STORE"}); videoMap[b.id]=vn; files.push(vn);
+      }
+    });
   });
   var assetMap={}, extOf={"image/jpeg":"jpg","image/png":"png","image/webp":"webp","image/gif":"gif","image/svg+xml":"svg"};
   [["logo","logo"],["coverImage","cover"]].forEach(function(a){
@@ -2608,16 +2718,17 @@ document.getElementById("btn-import").addEventListener("click",function(){
     var jobs=parsed.pages.reduce(function(pr,p){
       return pr.then(function(acc){
         var img=p.imgs[0];
-        var page={id:uid("p"), heading:p.heading, body:p.body, image:null, imageAlt:img?img.alt:"", keyPoint:"", video:null};
+        var page={id:uid("p"), heading:p.heading, blocks: p.body.trim() ? [{id:uid("b"),type:"text",body:p.body}] : []};
         if(!img){ acc.push(page); return acc; }
         status.textContent="Preparing pictures "+(++done)+" of "+total+"…";
         return parsed.loadImg(img)
-          .then(function(url){ page.image=url; acc.push(page); return acc; }, function(){ acc.push(page); return acc; });
+          .then(function(url){ page.blocks.push({id:uid("b"),type:"image",image:url,imageAlt:img.alt||"",imagePos:"standard"}); acc.push(page); return acc; },
+                function(){ acc.push(page); return acc; });
       });
     }, Promise.resolve([]));
     jobs.then(function(pages){
       if(mode==="replace"){
-        var oldKeys=state.pages.map(function(p){ return p.video && p.video.kind==="file" ? p.video.key : null; }).filter(Boolean);
+        var oldKeys=allVideos().filter(function(v){ return v.kind==="file"; }).map(function(v){ return v.key; });
         state.pages=pages; state.quiz=[]; state.title=parsed.title||state.title; state.example=false;
         oldKeys.forEach(forgetVideo);
         sel={type:"page", idx:0};
@@ -2635,7 +2746,7 @@ document.getElementById("btn-save").addEventListener("click",function(){
   var btn=this;
   var data=JSON.parse(JSON.stringify(state)); delete data.example; data.app="scorm-studio"; data.saved=new Date().toISOString();
   var z=new JSZip(); z.file("project.json", JSON.stringify(data,null,2));
-  state.pages.forEach(function(p){ if(p.video && p.video.kind==="file" && videoStore[p.video.key]) z.file("videos/"+p.video.key, videoStore[p.video.key], {compression:"STORE"}); });
+  state.pages.forEach(function(p){ videoBlocksOf(p).forEach(function(b){ if(b.video.kind==="file" && videoStore[b.video.key]) z.file("videos/"+b.video.key, videoStore[b.video.key], {compression:"STORE"}); }); });
   btn.disabled=true;
   z.generateAsync({type:"blob",compression:"DEFLATE"}).then(function(blob){
     return saveFile(slug(state.title)+".scorm-project.zip", blob);
@@ -2648,12 +2759,12 @@ function applyProject(d, blobs, fname){
   if(!d || !Array.isArray(d.pages) || !Array.isArray(d.quiz)) throw new Error("bad");
   delete d.app; delete d.saved;
   d.pages.forEach(function(p){
-    p.id=p.id||uid("p"); p.body=p.body||""; p.heading=p.heading||""; p.video=p.video||null;
-    if(p.video && p.video.kind==="file" && blobs[p.video.key]){
-      var b=blobs[p.video.key]; videoStore[p.video.key]=b; idb.put(p.video.key,b);
-    }
+    p.id=p.id||uid("p"); p.heading=p.heading||"";
+    pageVideosRaw(p).forEach(function(v){
+      if(v.kind==="file" && blobs[v.key]){ var b=blobs[v.key]; videoStore[v.key]=b; idb.put(v.key,b); }
+    });
   });
-  d.quiz.forEach(function(q){ q.id=q.id||uid("q"); q.options=q.options||["",""]; q.correct=q.correct||0; });
+  d.quiz.forEach(function(q){ q.id=q.id||uid("q"); if(!q.type){ q.options=q.options||["",""]; q.correct=q.correct||0; } });
   state=ensureDesign(Object.assign(exampleCourse(), d)); state.example=false; persist(); sel={type:"settings",idx:0}; render(); restoreVideos(); toast("Opened "+fname);
 }
 document.getElementById("file-open").addEventListener("change",function(e){
@@ -2665,8 +2776,10 @@ document.getElementById("file-open").addEventListener("change",function(e){
       return pj.async("string").then(function(txt){
         var d=JSON.parse(txt), blobs={}, jobs=[];
         (d.pages||[]).forEach(function(p){
-          if(p.video && p.video.kind==="file"){ var vf=z.file("videos/"+p.video.key);
-            if(vf) jobs.push(vf.async("blob").then(function(b){ blobs[p.video.key]=new Blob([b],{type:p.video.type||"video/mp4"}); })); }
+          pageVideosRaw(p).forEach(function(v){
+            if(v.kind==="file"){ var vf=z.file("videos/"+v.key);
+              if(vf) jobs.push(vf.async("blob").then(function(b){ blobs[v.key]=new Blob([b],{type:v.type||"video/mp4"}); })); }
+          });
         });
         return Promise.all(jobs).then(function(){ applyProject(d, blobs, f.name); });
       });

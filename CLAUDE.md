@@ -58,6 +58,25 @@ One file: CSS, markup, then one big script in an IIFE. Key areas (search for the
 - **State:** a single `state` object, saved to `localStorage` key `scorm-studio-draft-v1`.
   AI settings are separate in `scorm-studio-ai-v1`. Video files live in IndexedDB `scorm-studio` / `videos`.
 - **Editor views:** `render()` switches on `sel.type`: `renderSettings`, `renderDesign`, `renderPage`, `renderQuiz`.
+- **Page blocks:** a page is a heading plus an ordered list of typed content blocks, not a fixed
+  heading+body+image+video+keypoint shape. Block `type`s: `"text"` (`body`, same markdown-lite as before),
+  `"image"` (`image`, `imageAlt`, `imagePos: "standard"|"banner"`), `"video"` (`video`, same shape as always —
+  `{kind:"file"|"embed"|"remote", ...}`), `"quote"` (`text`, `cite`), `"keypoint"` (`text`, `tone` — the old
+  key-point callout, now placeable anywhere and more than once per page). `newBlock(type)` creates one,
+  `blockEditor(b, p, redraw)` is the shared editor card (reuses the same up/down/delete pattern as
+  `questionCard`), `blockHTML(b, bi)` in `PLAYER_JS` renders one for the learner. `renderImgBox`/`renderVideoBox`
+  are reused unchanged for image/video blocks — they already operated generically on whatever object holding
+  `.image`/`.imageAlt`/`.imagePos` or `.video` was passed in, they just used to be called on the page itself.
+  **A page can now hold more than one image or video**, so anything that export/import/housekeeping code
+  previously keyed by page index (image/video filenames, `cmi`-adjacent lookups) is keyed by block id instead
+  — `videoBlocksOf(p)` / `allVideos()` walk every page's video blocks for housekeeping (orphan video cleanup,
+  the Videos stat, project save/open). Required-video gating in `PLAYER_JS` (`showPage()`) now waits for every
+  required video block on the page, not just one.
+- **Migration:** `migratePageToBlocks(p)`, called from `ensureDesign()`, converts a page still in the old flat
+  shape (`body`/`image`/`imageAlt`/`imagePos`/`keyPoint`/`callout`/`video` directly on the page) into blocks
+  the first time it's loaded, then deletes the old fields. This is the one-time safety net for every course
+  saved before the block system existed — **don't reintroduce a flat page field without also deciding what
+  happens to pages that still only have `blocks`.**
 - **Question cards:** `questionCard(q, qi, list, redraw)` is shared by the final quiz and per-page knowledge checks.
   Each question has a `type`: `"mc"` (default, also used for quick true/false — a UI shortcut, not a separate
   type), `"match"` (`pairs: [{left,right}]`), `"fill"` (`text` with `___` blanks + `answers: [...]`, matched
@@ -85,8 +104,10 @@ One file: CSS, markup, then one big script in an IIFE. Key areas (search for the
 - **Learner player:** `courseData()` + `designData()` → `playerHTML(data)` which inlines `PLAYER_CSS` and
   `PLAYER_JS`. `PLAYER_JS` is written as a function then stringified, so **it cannot use anything from the
   builder's scope**; it only reads the JSON course data embedded in the page.
-- **Export:** `buildZip()` writes `index.html`, `imsmanifest.xml`, and `media/` (page images, videos, logo, cover).
-  `manifest(files)` writes SCORM 1.2 or 2004 4th Edition manifests.
+- **Export:** `buildZip()` writes `index.html`, `imsmanifest.xml`, and `media/` (block images/videos as
+  `page-<n>-<block position>.<ext>`, hotspot question images, logo, cover — each has its own small export loop,
+  there's no single shared "export an image" helper). `manifest(files)` writes SCORM 1.2 or 2004 4th Edition
+  manifests.
 - **Import:** `readOffice()` → `parseDocx` (Heading 1 splits pages), `parsePptx` (one page per slide, biggest
   picture, optional speaker notes, hidden slides skipped), `parsePdf` (auto / picture / text modes;
   repeated headers, footers and page numbers stripped).
@@ -110,12 +131,8 @@ state = {
     logo, logoAlt, cover, coverImage, coverButton   // logo/coverImage are data: URLs
   },
   pages: [{
-    id, heading, body,            // body: blank line = paragraph, "- " = bullet, **bold**
-    image, imageAlt,              // image: data: URL
-    imagePos: "above"|"below"|"left"|"right"|"banner",
-    keyPoint, callout: "brand"|"info"|"warning"|"success"|"danger",
-    video: null | {kind:"file", key, name, type, size, required}
-                | {kind:"embed", url, src, site} | {kind:"remote", url, src, site, required},
+    id, heading,
+    blocks: [Block],               // see "Page blocks" above - a page used to be one fixed shape, now it's this
     check: {on, mustPass, questions:[Question], branch: {pass: pageId|null, fail: pageId|null}}
                                    // branch targets a page's *id*, not its index, so reordering pages
                                    // doesn't break them. fail only applies when mustPass is off - a
@@ -123,7 +140,8 @@ state = {
   }],
   quiz: [Question]
 }
-// Question = {id, q, feedback, type: "mc"|"match"|"fill", ...type-specific fields (see questionCard above)}
+// Block = {id, type: "text"|"image"|"video"|"quote"|"keypoint", ...type-specific fields (see "Page blocks" above)}
+// Question = {id, q, feedback, type: "mc"|"match"|"fill"|"hotspot", ...type-specific fields (see questionCard above)}
 ```
 
 `ensureDesign(s)` fills in missing design fields, page defaults, `showBadge`, and defaults every question's
@@ -197,7 +215,7 @@ Full guide and troubleshooting: `docs/TRUENAS-SETUP.md`.
 
 - Monthly scheduled check of Bridge SCORM docs and browser changes (offered, not set up).
 - cmi5 export if Global ever moves to an LMS that supports it.
-- Block-based page layout (accordion / steps / pull-quote sections) for more design flexibility than the
-  current fixed heading+body+image+video page shape - not started, needs a call from Keith on scope first.
+- More block types (accordion, numbered steps) - the block infrastructure (`newBlock`, `blockEditor`,
+  `blockHTML`) now exists, so a new type is a much smaller addition than the original 5.
 - AI-assisted page text drafting (beyond quiz questions), using the same quiz-server infrastructure.
 - More theme/template presets.

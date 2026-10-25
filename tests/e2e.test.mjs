@@ -67,11 +67,13 @@ test("builder: design, logo, cover, image position and export", async (t) => {
   await page.setInputFiles("#d-logobox input[type=file]", join(OUT, "logo.png"));
   await page.check("#d-cover");
   await page.click("#nav-pages .nav-item >> nth=0");
-  await page.setInputFiles("#pg-imgbox input[type=file]", join(OUT, "pic.png"));
-  await page.selectOption("#pg-imgpos", "left");
+  await page.click('[data-addblock="image"]');
+  await page.setInputFiles(".q:last-child .img-box input[type=file]", join(OUT, "pic.png"));
+  await page.selectOption(".q:last-child .img-box select", "banner");
   const zip = await exportZip(page, "designed.zip");
   const names = Object.keys(zip.files);
-  for (const f of ["index.html", "imsmanifest.xml", "media/logo.png", "media/page-1.png"]) assert.ok(names.includes(f), f + " in zip");
+  for (const f of ["index.html", "imsmanifest.xml", "media/logo.png"]) assert.ok(names.includes(f), f + " in zip");
+  assert.ok(names.some((n) => /^media\/page-1-\d+\.png$/.test(n)), "a page-1 image block file is in the zip");
   const manifest = await zip.file("imsmanifest.xml").async("string");
   assert.match(manifest, /<schemaversion>1.2<\/schemaversion>/);
   assert.match(manifest, /media\/logo.png/);

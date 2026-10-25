@@ -26,8 +26,8 @@ export function course(over = {}) {
     accent: "#1F6F5C", showAnswers: true, allowRetry: true, shuffle: false,
     design: { cover: false },
     pages: [
-      { heading: "A", body: "First page\n- point", keyPoint: "", callout: "brand", image: null, imageAlt: "", imagePos: "above", video: null, check: null },
-      { heading: "B", body: "Second page", keyPoint: "", callout: "brand", image: null, imageAlt: "", imagePos: "above", video: null, check: null },
+      { id: "p0", heading: "A", blocks: [{ id: "b0", type: "text", body: "First page\n- point" }], check: null },
+      { id: "p1", heading: "B", blocks: [{ id: "b1", type: "text", body: "Second page" }], check: null },
     ],
     quiz: [{ q: "Q1", options: ["no", "yes"], correct: 1, feedback: "" }],
     ...over,
