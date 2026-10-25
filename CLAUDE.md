@@ -62,9 +62,18 @@ One file: CSS, markup, then one big script in an IIFE. Key areas (search for the
   heading+body+image+video+keypoint shape. Block `type`s: `"text"` (`body`, same markdown-lite as before),
   `"image"` (`image`, `imageAlt`, `imagePos: "standard"|"banner"`), `"video"` (`video`, same shape as always —
   `{kind:"file"|"embed"|"remote", ...}`), `"quote"` (`text`, `cite`), `"keypoint"` (`text`, `tone` — the old
-  key-point callout, now placeable anywhere and more than once per page). `newBlock(type)` creates one,
+  key-point callout, now placeable anywhere and more than once per page), `"accordion"` and `"steps"`
+  (both `items: [{title, body}]` — same shape, only `blockHTML` renders them differently: `accordion` as
+  collapsible `<details>` panels, `steps` as a numbered list with `h3` headings. `itemsEditor(b)` is the one
+  shared add/remove-item editor both use). `newBlock(type)` creates one,
   `blockEditor(b, p, redraw)` is the shared editor card (reuses the same up/down/delete pattern as
-  `questionCard`), `blockHTML(b, bi)` in `PLAYER_JS` renders one for the learner. `renderImgBox`/`renderVideoBox`
+  `questionCard`), `blockHTML(b, bi)` in `PLAYER_JS` renders one for the learner. **A block type's fields are
+  shaped in three places that must all agree, or the type silently loses data: `newBlock()` (what a fresh one
+  looks like), `courseData()`'s block map (what gets exported/played — this one's a plain `if` chain with no
+  default case for unknown fields, so a type missing here falls through to `{type:"text", body:b.body||""}`
+  and silently exports as empty text), and `blockHTML()` in `PLAYER_JS` (how it renders).** `pageText(p,i)`
+  also needs a branch per type or its content is invisible to quiz writing and AI page drafting.
+  `renderImgBox`/`renderVideoBox`
   are reused unchanged for image/video blocks — they already operated generically on whatever object holding
   `.image`/`.imageAlt`/`.imagePos` or `.video` was passed in, they just used to be called on the page itself.
   **A page can now hold more than one image or video**, so anything that export/import/housekeeping code
@@ -148,7 +157,7 @@ state = {
   }],
   quiz: [Question]
 }
-// Block = {id, type: "text"|"image"|"video"|"quote"|"keypoint", ...type-specific fields (see "Page blocks" above)}
+// Block = {id, type: "text"|"image"|"video"|"quote"|"keypoint"|"accordion"|"steps", ...type-specific fields (see "Page blocks" above)}
 // Question = {id, q, feedback, type: "mc"|"match"|"fill"|"hotspot", ...type-specific fields (see questionCard above)}
 ```
 
@@ -226,5 +235,3 @@ Full guide and troubleshooting: `docs/TRUENAS-SETUP.md`.
 
 - Monthly scheduled check of Bridge SCORM docs and browser changes (offered, not set up).
 - cmi5 export if Global ever moves to an LMS that supports it.
-- More block types (accordion, numbered steps) - the block infrastructure (`newBlock`, `blockEditor`,
-  `blockHTML`) now exists, so a new type is a much smaller addition than the original 5.

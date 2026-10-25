@@ -89,6 +89,40 @@ test("Page blocks: text, image, quote and key point all render, in order", () =>
   assert.ok(order.findIndex((c) => c === "quote") < order.findIndex((c) => /\bkey\b/.test(c)), "quote comes before key point");
 });
 
+test("Page blocks: accordion and numbered steps render, filtering out empty items", () => {
+  const pages = [
+    {
+      id: "p0", heading: "Mixed page", check: null,
+      blocks: [
+        { id: "b0", type: "accordion", items: [
+          { title: "What is tailgating?", body: "Following someone through a door without using your own pass." },
+          { title: "", body: "" },
+          { title: "What to do", body: "Report it the same day." },
+        ] },
+        { id: "b1", type: "steps", items: [
+          { title: "Badge in", body: "Use your own pass at the reader." },
+          { title: "Check the light", body: "Green means you're through." },
+        ] },
+      ],
+    },
+  ];
+  const p = play(course({ pages, quiz: [] }), fakeLms("1.2"));
+  const card = p.d.querySelector(".card");
+
+  const details = card.querySelectorAll(".accordion details");
+  assert.equal(details.length, 2, "the blank item is filtered out");
+  assert.match(details[0].querySelector("summary").textContent, /What is tailgating/);
+  assert.match(details[0].querySelector(".acc-body").textContent, /Following someone/);
+  assert.match(details[1].querySelector("summary").textContent, /What to do/);
+
+  const steps = card.querySelectorAll(".steps li");
+  assert.equal(steps.length, 2);
+  assert.equal(steps[0].querySelector(".step-n").textContent, "1");
+  assert.match(steps[0].querySelector("h3").textContent, /Badge in/);
+  assert.equal(steps[1].querySelector(".step-n").textContent, "2");
+  assert.match(steps[1].querySelector(".step-body").textContent, /Green means/);
+});
+
 test("SCORM 1.2: failing the quiz reports failed", () => {
   const lms = fakeLms("1.2");
   const p = play(course(), lms);

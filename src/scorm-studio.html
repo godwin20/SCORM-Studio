@@ -175,6 +175,9 @@ input[type=color]{width:48px;height:38px;border:1px solid var(--line);border-rad
 .draft-box{display:grid;gap:10px}
 .draft-preview-wrap{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--surface)}
 .draft-preview{white-space:pre-wrap;font-size:14px;max-height:280px;overflow:auto}
+.acc-item{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;gap:8px}
+.acc-item-top{display:flex;gap:8px;align-items:center}
+.acc-item-top input{flex:1}
 .steps{padding-left:20px;margin:8px 0;font-size:14px}
 .steps li{margin:3px 0}
 
@@ -652,7 +655,7 @@ function renderDesign(ed){
   sync(); draw();
 }
 
-var BLOCK_TYPES = [["text","Text"],["image","Image"],["video","Video"],["quote","Quote"],["keypoint","Key point"]];
+var BLOCK_TYPES = [["text","Text"],["image","Image"],["video","Video"],["quote","Quote"],["keypoint","Key point"],["accordion","Accordion"],["steps","Numbered steps"]];
 function blockTypeLabel(type){ var m=BLOCK_TYPES.filter(function(t){ return t[0]===type; })[0]; return m?m[1]:type; }
 function newBlock(type){
   var id=uid("b");
@@ -660,7 +663,34 @@ function newBlock(type){
   if(type==="video") return {id:id, type:"video", video:null};
   if(type==="quote") return {id:id, type:"quote", text:"", cite:""};
   if(type==="keypoint") return {id:id, type:"keypoint", text:"", tone:"brand"};
+  if(type==="accordion" || type==="steps") return {id:id, type:type, items:[{title:"",body:""},{title:"",body:""}]};
   return {id:id, type:"text", body:""};
+}
+/* Shared editor for accordion/steps items - both are just an ordered list of {title, body}, only the
+   learner-side rendering (blockHTML) differs between a collapsible panel and a numbered step. */
+function itemsEditor(b){
+  if(!b.items || !b.items.length) b.items=[{title:"",body:""},{title:"",body:""}];
+  var box=el('<div style="display:grid;gap:10px"></div>');
+  var list=el('<div style="display:grid;gap:10px"></div>'); box.appendChild(list);
+  var addBtn=el('<button class="btn small" type="button">+ Add item</button>'); box.appendChild(addBtn);
+  function draw(){
+    list.innerHTML="";
+    b.items.forEach(function(it,ii){
+      var row=el('<div class="acc-item"><div class="acc-item-top"><input type="text" placeholder="Heading '+(ii+1)+'">'+
+        '<button class="btn small ghost" type="button" aria-label="Remove item">Remove</button></div>'+
+        '<textarea class="short" placeholder="Details"></textarea></div>');
+      var ti=row.querySelector("input"), rm=row.querySelector("button"), ta=row.querySelector("textarea");
+      ti.value=it.title||""; ta.value=it.body||"";
+      ti.addEventListener("input",function(){ it.title=ti.value; touched(); });
+      ta.addEventListener("input",function(){ it.body=ta.value; touched(); });
+      rm.disabled=b.items.length<=1;
+      rm.addEventListener("click",function(){ b.items.splice(ii,1); touched(); draw(); });
+      list.appendChild(row);
+    });
+  }
+  draw();
+  addBtn.addEventListener("click",function(){ b.items.push({title:"",body:""}); touched(); draw(); });
+  return box;
 }
 var DRAFT_MODES=[["expand","Expand with more detail"],["tighten","Tighten (shorter, clearer)"],["simplify","Simplify the language"],["polish","Polish grammar & spelling"]];
 /* Asks Claude to rewrite a text block's content. Never overwrites `b.body` itself - the
@@ -748,6 +778,10 @@ function blockEditor(b, p, redraw){
     var inp=box.querySelector("input"), sel=box.querySelector("select");
     inp.value=b.text||""; inp.addEventListener("input",function(){ b.text=inp.value; touched(); });
     sel.value=b.tone||"brand"; sel.addEventListener("change",function(){ b.tone=sel.value; touched(); });
+  } else if(b.type==="accordion" || b.type==="steps"){
+    box.appendChild(el('<span class="hint" style="display:block;margin-bottom:8px">'+
+      (b.type==="accordion"?"Learners click each heading to reveal its text.":"Shown to learners as a numbered list of steps.")+'</span>'));
+    box.appendChild(itemsEditor(b));
   }
   c.addEventListener("click",function(e){
     var a=e.target.closest("[data-a]"); if(!a) return;
@@ -826,6 +860,9 @@ function pageText(p, i){
     else if(b.type==="quote" && b.text) parts.push("Quote: "+b.text+(b.cite?" — "+b.cite:""));
     else if(b.type==="keypoint" && b.text) parts.push("Key point: "+b.text);
     else if(b.type==="image" && b.imageAlt) parts.push("Picture shows: "+b.imageAlt);
+    else if((b.type==="accordion" || b.type==="steps") && b.items){
+      b.items.forEach(function(it){ if(it.title||it.body) parts.push((it.title?it.title+" — ":"")+(it.body||"").replace(/\*\*/g,"")); });
+    }
   });
   return parts.join("\n");
 }
@@ -1606,6 +1643,7 @@ function courseData(imageMap, videoMap, assetMap, hotspotMap){
         if(b.type==="video") return {type:"video", video: videoData(b, videoMap)};
         if(b.type==="quote") return {type:"quote", text:b.text||"", cite:b.cite||""};
         if(b.type==="keypoint") return {type:"keypoint", text:b.text||"", tone:b.tone||"brand"};
+        if(b.type==="accordion" || b.type==="steps") return {type:b.type, items:(b.items||[]).map(function(it){ return {title:it.title||"", body:it.body||""}; })};
         return {type:"text", body:b.body||""};
       });
       return {id:p.id, heading:p.heading, blocks:blocks, check:chk};
@@ -1680,6 +1718,20 @@ var PLAYER_CSS = [
 ".key{border-left:4px solid var(--accent);padding:12px 16px;border-radius:0 var(--r2) var(--r2) 0;margin-top:20px;font-weight:600}",
 ".quote{margin:0 0 20px;padding:4px 0 4px 18px;border-left:3px solid var(--line);font-size:1.1em;font-style:italic;color:var(--muted)}",
 ".quote cite{display:block;margin-top:6px;font-size:.78em;font-style:normal;font-weight:600;color:var(--ink)}",
+".accordion{margin:0 0 20px;display:grid;gap:10px}",
+".accordion details{border:1px solid var(--line);border-radius:var(--r2);overflow:hidden}",
+".accordion summary{cursor:pointer;padding:14px 16px;font-weight:600;list-style:none;display:flex;align-items:center;gap:10px}",
+".accordion summary::-webkit-details-marker{display:none}",
+".accordion summary::before{content:'+';color:var(--accent);font-weight:700;font-size:1.2em;width:1em;flex:0 0 auto;text-align:center}",
+".accordion details[open] summary::before{content:'\\2212'}",
+".accordion .acc-body{padding:0 16px 16px}",
+".accordion .acc-body p:last-child,.accordion .acc-body ul:last-child{margin-bottom:0}",
+".steps{list-style:none;margin:0 0 20px;padding:0;display:grid;gap:16px}",
+".steps li{display:flex;gap:14px;align-items:flex-start}",
+".steps .step-n{flex:0 0 auto;width:28px;height:28px;border-radius:50%;background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85em}",
+".steps .step-body{flex:1;min-width:0;padding-top:3px}",
+".steps h3{font-size:1.05em;margin:0 0 6px}",
+".steps .step-body p:last-child,.steps .step-body ul:last-child{margin-bottom:0}",
 "footer{background:var(--card);border-top:1px solid var(--line);padding:12px 20px}",
 ".ft{max-width:var(--maxw);margin:0 auto;display:flex;justify-content:space-between;gap:12px}",
 "button{font:inherit;font-size:16px;border-radius:var(--r2);padding:10px 20px;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink)}",
@@ -1838,6 +1890,18 @@ function blockHTML(b, bi){
   if(b.type==="video") return videoHTML(b.video, bi);
   if(b.type==="quote") return b.text ? '<blockquote class="quote">'+inline(b.text)+(b.cite?'<cite>'+inline(b.cite)+'</cite>':'')+'</blockquote>' : "";
   if(b.type==="keypoint") return b.text ? '<div class="key k-'+esc(b.tone||"brand")+'">'+inline(b.text)+'</div>' : "";
+  if(b.type==="accordion"){
+    var accItems=(b.items||[]).filter(function(it){ return it.title||it.body; });
+    return accItems.length ? '<div class="accordion">'+accItems.map(function(it){
+      return '<details><summary>'+inline(it.title||"Untitled")+'</summary><div class="acc-body">'+rich(it.body)+'</div></details>';
+    }).join("")+'</div>' : "";
+  }
+  if(b.type==="steps"){
+    var stepItems=(b.items||[]).filter(function(it){ return it.title||it.body; });
+    return stepItems.length ? '<ol class="steps">'+stepItems.map(function(it,si){
+      return '<li><span class="step-n" aria-hidden="true">'+(si+1)+'</span><div class="step-body">'+(it.title?'<h3>'+inline(it.title)+'</h3>':"")+rich(it.body)+'</div></li>';
+    }).join("")+'</ol>' : "";
+  }
   return "";
 }
 function shuffle(a){ a=a.slice(); for(var i=a.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
