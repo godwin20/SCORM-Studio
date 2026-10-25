@@ -107,7 +107,10 @@ state = {
     keyPoint, callout: "brand"|"info"|"warning"|"success"|"danger",
     video: null | {kind:"file", key, name, type, size, required}
                 | {kind:"embed", url, src, site} | {kind:"remote", url, src, site, required},
-    check: {on, mustPass, questions:[Question]}
+    check: {on, mustPass, questions:[Question], branch: {pass: pageId|null, fail: pageId|null}}
+                                   // branch targets a page's *id*, not its index, so reordering pages
+                                   // doesn't break them. fail only applies when mustPass is off - a
+                                   // must-pass check never "fails forward", it just keeps retrying.
   }],
   quiz: [Question]
 }
@@ -129,6 +132,9 @@ courses keep working.
   `f` finished, `s` last score. SCORM 1.2 caps suspend_data at 4096 characters, so keep it small.
 - Session time written on exit; `cmi.core.exit` / `cmi.exit` = `suspend` until finished.
 - Knowledge checks never count towards the score. Must-pass checks keep right answers locked on retry.
+- Branching: `pageIndexById(id)` resolves a check's `branch.pass`/`branch.fail` page id to an index;
+  `gotoOrAdvance(targetId)` jumps there if found, else falls through to the normal `advance()`. Wired into
+  the "Continue" button in `showCheck()`. The final quiz is never branch-driven - it always runs last.
 
 ## The quiz server (server/server.js)
 

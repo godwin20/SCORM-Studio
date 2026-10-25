@@ -116,6 +116,44 @@ test("Knowledge check: must-pass blocks until right, then is skipped on return",
   assert.deepEqual(JSON.parse(lms.data["cmi.suspend_data"]).k, [0]);
 });
 
+test("Branching: a failed practice check jumps to the configured remedial page", () => {
+  const pages = course().pages;
+  pages[0].id = "p0"; pages[1].id = "p1";
+  pages.push({ id: "p2", heading: "Remedial", body: "Review this.", keyPoint: "", callout: "brand", image: null, imageAlt: "", imagePos: "above", video: null, check: null });
+  pages[0].check = { mustPass: false, questions: [{ q: "Pick yes", options: ["no", "yes"], correct: 1, feedback: "" }], branch: { pass: null, fail: "p2" } };
+  const p = play(course({ pages, quiz: [] }), fakeLms("1.2"));
+  p.click("next"); // page A -> its check
+  p.pick("k0", 0); // wrong answer
+  p.click("kcheck");
+  p.click("kgo");
+  assert.equal(p.heading(), "Remedial", "wrong answer branched to the remedial page, not the normal next page");
+});
+
+test("Branching: a passed check can jump ahead, skipping the normal next page", () => {
+  const pages = course().pages;
+  pages[0].id = "p0"; pages[1].id = "p1";
+  pages.push({ id: "p2", heading: "Skip target", body: "You knew it already.", keyPoint: "", callout: "brand", image: null, imageAlt: "", imagePos: "above", video: null, check: null });
+  pages[0].check = { mustPass: false, questions: [{ q: "Pick yes", options: ["no", "yes"], correct: 1, feedback: "" }], branch: { pass: "p2", fail: null } };
+  const p = play(course({ pages, quiz: [] }), fakeLms("1.2"));
+  p.click("next");
+  p.pick("k0", 1); // right answer
+  p.click("kcheck");
+  p.click("kgo");
+  assert.equal(p.heading(), "Skip target", "correct answer branched ahead past page B");
+});
+
+test("Branching: no branch set keeps the normal next-page behaviour", () => {
+  const pages = course().pages;
+  pages[0].id = "p0"; pages[1].id = "p1";
+  pages[0].check = { mustPass: false, questions: [{ q: "Pick yes", options: ["no", "yes"], correct: 1, feedback: "" }], branch: { pass: null, fail: null } };
+  const p = play(course({ pages, quiz: [] }), fakeLms("1.2"));
+  p.click("next");
+  p.pick("k0", 0);
+  p.click("kcheck");
+  p.click("kgo");
+  assert.equal(p.heading(), "B", "no branch configured falls through to the normal next page");
+});
+
 test("Knowledge check: practice mode lets learners carry on after a wrong answer", () => {
   const pages = course().pages;
   pages[0].check = { mustPass: false, questions: [{ q: "Pick yes", options: ["no", "yes"], correct: 1, feedback: "" }] };

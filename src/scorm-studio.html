@@ -679,8 +679,18 @@ function renderCheck(box, p, pageIdx){
   function draw(){
     body.hidden=!c.on; box.classList.toggle("on", !!c.on);
     if(!c.on){ body.innerHTML=""; return; }
+    var branchOpts=function(selected){
+      return '<option value="">Next page (normal)</option>'+state.pages.map(function(pg,i){
+        if(pg===p) return "";
+        return '<option value="'+pg.id+'"'+(selected===pg.id?' selected':'')+'>'+(i+1)+'. '+esc(pg.heading||"Untitled page")+'</option>';
+      }).join("");
+    };
     body.innerHTML=
       '<label class="check"><input type="checkbox" id="kc-must"><span><b>Must answer correctly to continue</b><br><span class="hint">Untick for practice only: learners see the answers and can carry on either way</span></span></label>'+
+      '<div class="row2">'+
+        '<label class="f"><span>If passed, go to</span><select id="kc-pass">'+branchOpts(c.branch&&c.branch.pass)+'</select></label>'+
+        '<label class="f"><span>If not passed, go to <span class="hint">only used when "must answer correctly" is off</span></span><select id="kc-fail">'+branchOpts(c.branch&&c.branch.fail)+'</select></label>'+
+      '</div>'+
       '<div class="qlist" id="kc-list"></div>'+
       '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">'+
         '<button class="btn small" type="button" id="kc-add">+ Add question</button>'+
@@ -688,6 +698,9 @@ function renderCheck(box, p, pageIdx){
         '<span class="status" id="kc-status"></span></div>';
     var must=body.querySelector("#kc-must"); must.checked=c.mustPass!==false;
     must.addEventListener("change",function(){ c.mustPass=must.checked; touched(); });
+    if(!c.branch) c.branch={pass:null, fail:null};
+    body.querySelector("#kc-pass").addEventListener("change",function(e){ c.branch.pass=e.target.value||null; touched(); });
+    body.querySelector("#kc-fail").addEventListener("change",function(e){ c.branch.fail=e.target.value||null; touched(); });
     var list=body.querySelector("#kc-list");
     c.questions.forEach(function(q,qi){ list.appendChild(questionCard(q,qi,c.questions,draw)); });
     body.querySelector("#kc-add").addEventListener("click",function(){ c.questions.push({id:uid("k"),q:"",options:["",""],correct:0,feedback:""}); touched(); draw(); });
@@ -1234,10 +1247,14 @@ function problems(){
       if(!q.options[q.correct] || !q.options[q.correct].trim()) out.push(label+": the answer marked correct is blank.");
     }
   }
+  var pageIds=state.pages.map(function(p){ return p.id; });
   state.pages.forEach(function(p,i){
     if(!p.check || !p.check.on) return;
     if(!p.check.questions.length) out.push("Page "+(i+1)+": the knowledge check is switched on but has no questions.");
     p.check.questions.forEach(function(q,qi){ checkQ(q,"Page "+(i+1)+" knowledge check, question "+(qi+1)); });
+    var br=p.check.branch;
+    if(br && br.pass && pageIds.indexOf(br.pass)<0) out.push("Page "+(i+1)+": the \"if passed\" page no longer exists.");
+    if(br && br.fail && pageIds.indexOf(br.fail)<0) out.push("Page "+(i+1)+": the \"if not passed\" page no longer exists.");
   });
   state.quiz.forEach(function(q,i){ checkQ(q,"Quiz question "+(i+1)); });
   return out;
@@ -1282,8 +1299,9 @@ function courseData(imageMap, videoMap, assetMap){
     passMark:state.passMark, accent:state.design.accent, showAnswers:state.showAnswers, allowRetry:state.allowRetry, shuffle:state.shuffle, showBadge:state.showBadge!==false,
     design: designData(assetMap),
     pages:state.pages.map(function(p,i){
-      var chk = (p.check && p.check.on && p.check.questions.length) ? {mustPass:p.check.mustPass!==false, questions:p.check.questions.map(cleanQ)} : null;
-      return {heading:p.heading, body:p.body, keyPoint:p.keyPoint||"", callout:p.callout||"brand", image:p.image ? (imageMap?imageMap[i]:p.image) : null, imageAlt:p.imageAlt||"", imagePos:p.imagePos||"above", video:videoData(p,i,videoMap), check:chk};
+      var br=p.check&&p.check.branch;
+      var chk = (p.check && p.check.on && p.check.questions.length) ? {mustPass:p.check.mustPass!==false, questions:p.check.questions.map(cleanQ), branch:{pass:(br&&br.pass)||null, fail:(br&&br.fail)||null}} : null;
+      return {id:p.id, heading:p.heading, body:p.body, keyPoint:p.keyPoint||"", callout:p.callout||"brand", image:p.image ? (imageMap?imageMap[i]:p.image) : null, imageAlt:p.imageAlt||"", imagePos:p.imagePos||"above", video:videoData(p,i,videoMap), check:chk};
     }),
     quiz:state.quiz.map(cleanQ)
   };
@@ -1573,6 +1591,14 @@ function advance(){
     else { page=C.pages.length-1; markComplete(); showDone(); }
   } else { save(); showPage(); }
 }
+function pageIndexById(id){
+  for(var i=0;i<C.pages.length;i++){ if(C.pages[i].id===id) return i; }
+  return -1;
+}
+function gotoOrAdvance(targetId){
+  var idx = targetId!=null ? pageIndexById(targetId) : -1;
+  if(idx>=0){ page=idx; save(); showPage(); } else advance();
+}
 
 /* --- question types shared by knowledge checks and the final quiz ---
    "picked" shapes: mc = option index (number); match = array, picked[leftIndex] = the pair
@@ -1773,7 +1799,10 @@ function showCheck(){
       var fs2=app.querySelectorAll("fieldset.q");
       keep.forEach(function(r,qi){ if(r.ok && fs2[qi]) fs2[qi].querySelectorAll("input,select,button.match-item").forEach(function(x){ x.disabled=true; }); });
     };
-    if(b=document.getElementById("kgo")) b.onclick=advance;
+    if(b=document.getElementById("kgo")) b.onclick=function(){
+      var br=K.branch||{};
+      gotoOrAdvance(allOk ? br.pass : br.fail);
+    };
     if(b=document.getElementById("kback")) b.onclick=function(){ showPage(); };
   }
   draw();
