@@ -186,7 +186,12 @@ Full guide and troubleshooting: `docs/TRUENAS-SETUP.md`.
 
 ## Ideas not built yet
 
-- "Close" button in Bridge's Current window mode can't close the window: show
-  "Your progress is saved. You can now return to Bridge" when `window.close()` has no effect.
 - Monthly scheduled check of Bridge SCORM docs and browser changes (offered, not set up).
 - cmi5 export if Global ever moves to an LMS that supports it.
+- A hotspot/click-the-image question type - the one question type still not built. It would also need
+  to extend `buildZip()`'s media export pipeline for question images (page images and design assets go
+  through it today; question images don't yet), so it's a bigger, separable change.
+- Block-based page layout (accordion / steps / pull-quote sections) for more design flexibility than the
+  current fixed heading+body+image+video page shape - not started, needs a call from Keith on scope first.
+- AI-assisted page text drafting (beyond quiz questions), using the same quiz-server infrastructure.
+- More theme/template presets.

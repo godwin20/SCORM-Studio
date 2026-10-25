@@ -265,3 +265,15 @@ test("Works with no LMS at all (preview / opened from disk)", () => {
   p.click("next"); p.click("next");
   assert.match(p.d.body.textContent, /reached the end/);
 });
+
+test("Close button: when window.close() has no effect, shows a return-to-Bridge message", async () => {
+  const p = play(course({ quiz: [] }), fakeLms("1.2"));
+  // Unlike a real browser (which silently ignores close() on a window script didn't open - Bridge's
+  // "Current window" mode), jsdom's close() actually tears the document down. Stub it as a no-op so
+  // this matches the real Bridge scenario the fix targets.
+  p.dom.window.close = () => {};
+  p.click("next"); p.click("next");
+  p.click("close");
+  await new Promise((r) => setTimeout(r, 400));
+  assert.match(p.d.body.textContent, /return to Bridge/);
+});

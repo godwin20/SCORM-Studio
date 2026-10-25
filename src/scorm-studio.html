@@ -1869,7 +1869,17 @@ function showDone(){
   shell(badge+'<span class="tag">Complete</span><h2>'+esc(C.title)+'</h2><p>'+msg+'</p><p class="muted">Your progress has been saved'+(S.api?' to the learning platform':'')+'. You can now close this window.</p>',
     '<button id="again">Go back through the pages</button><button class="go" id="close">Close</button>');
   document.getElementById("again").onclick=function(){ page=0; save(); showPage(); };
-  document.getElementById("close").onclick=function(){ terminate(); try{ window.close(); }catch(e){} };
+  document.getElementById("close").onclick=function(){
+    terminate();
+    try{ window.close(); }catch(e){}
+    // Still here after a tick means close() had no effect (e.g. Bridge's "Current window" mode,
+    // which isn't a window script opened and so can't close itself) - tell the learner what to do.
+    setTimeout(function(){
+      var b=document.getElementById("close"); if(!b) return;
+      shell(badge+'<span class="tag">Complete</span><h2>'+esc(C.title)+'</h2>'+
+        '<p class="muted">Your progress is saved. You can now return to Bridge.</p>', '');
+    }, 250);
+  };
 }
 
 /* --- start --- */
